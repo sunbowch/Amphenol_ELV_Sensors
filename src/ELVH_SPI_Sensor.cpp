@@ -179,7 +179,7 @@ float ELVH_SPI_Sensor::convertPressure(uint16_t rawPressure) {
             break;
         }
         else {
-            Serial << "Invalid sensor model" << endl;
+            Serial.println("Invalid sensor model");
         }
     }
 
