@@ -221,13 +221,7 @@ int ELVH_SPI_Sensor::getStatus() {
     ReadSensorData(2);
     switch (status) {
         case 0b00:
-            Serial.println("No error");
-            Serial.print("Pressure: ");
-            Serial.println(convertPressure(pressure));
-            if (bytesToRead >= 3) {
-                Serial.print("Temperature: ");
-                Serial.println(convertTemperature(temperature));
-            }
+            Serial.println("Ready");
             break;
         case 0b10:
             Serial.println("No new data since last read");
