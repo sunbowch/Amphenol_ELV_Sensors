@@ -1,13 +1,13 @@
 #include "ELVH_SPI_Sensor.h"
 #include <Arduino.h>
 
-void ELVH_SPI_Sensor::begin() {
-    // Initialization code here
+void ELVH_SPI_Sensor::begin(uint8_t csPin) {
+    this->csPin = csPin; // Store the CS pin
     Serial.begin(9600);
     SPI.begin();
     SPI.beginTransaction(SPISettings(800000, MSBFIRST, SPI_MODE0)); // Set SPI clock to 800 kHz
-    pinMode(SS, OUTPUT);
-    digitalWrite(SS, HIGH); // Ensure CS is high
+    pinMode(csPin, OUTPUT);
+    digitalWrite(csPin, HIGH); // Ensure CS is high
 }
 
 void ELVH_SPI_Sensor::setSensorModel(const char* model) {
@@ -16,9 +16,9 @@ void ELVH_SPI_Sensor::setSensorModel(const char* model) {
 }
 
 void ELVH_SPI_Sensor::readSensorData(uint8_t bytesToRead) {
-    digitalWrite(SS, LOW); // Pull CS low to start communication
+    digitalWrite(csPin, LOW); // Pull CS low to start communication
     readSPI(bytesToRead);
-    digitalWrite(SS, HIGH); // Pull CS high to end communication
+    digitalWrite(csPin, HIGH); // Pull CS high to end communication
 }
 
 void ELVH_SPI_Sensor::readSPI(uint8_t bytesToRead) {
@@ -169,7 +169,7 @@ float ELVH_SPI_Sensor::convertPressure(uint16_t rawPressure) {
         {'B010G', 0, 10}, 
         {'B001A', 0, 1}, 
         {'B002A', 0, 2}
-    }
+    };
     float minPressure = 0.0;
     float maxPressure = 0.0;
     for (const auto& range : pressureRanges) {

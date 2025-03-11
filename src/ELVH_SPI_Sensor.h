@@ -6,7 +6,7 @@
 
 class ELVH_SPI_Sensor {
 public:
-    void begin();
+    void begin(uint8_t csPin);
     void readSensorData(uint8_t bytesToRead = 4);
     float getPressure();
     float getTemperature();
@@ -16,6 +16,7 @@ private:
     uint16_t pressure;
     uint16_t temperature;
     char sensorModel[20];
+    uint8_t csPin; // New member variable to store the CS pin
     void readSPI(uint8_t bytesToRead);
     float convertPressure(uint16_t rawPressure);
     float convertTemperature(uint16_t rawTemperature);
