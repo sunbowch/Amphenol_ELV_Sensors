@@ -123,7 +123,7 @@ void ELVH_SPI_Sensor::begin(uint8_t csPin) {
             Serial.println("Invalid sensor model");
         }
     }
-    pFactor = (maxPressure - minPressure)
+    pFactor = (maxPressure - minPressure);
     switch (D) {
         case 'A':
             pOffset = 1638;
@@ -145,8 +145,6 @@ void ELVH_SPI_Sensor::begin(uint8_t csPin) {
             pFactor = 0.0; // Invalid transfer function
             break;
     }
-
-
 }
 
 void ELVH_SPI_Sensor::setSensorModel(const char* model) {
