@@ -14,6 +14,10 @@ public:
     void setSensorModel(const char* model);
 
 private:
+    uint16_t minPressure;
+    uint16_t maxPressure;
+    float pFactor;
+    uint16_t pOffset;
     uint16_t pressure;
     uint16_t temperature;
     int status;

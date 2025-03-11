@@ -3,74 +3,12 @@
 
 void ELVH_SPI_Sensor::begin(uint8_t csPin) {
     this->csPin = csPin; // Store the CS pin
-    Serial.begin(9600);
+    //Serial.begin(9600);
     SPI.begin();
     SPI.beginTransaction(SPISettings(800000, MSBFIRST, SPI_MODE0)); // Set SPI clock to 800 kHz
     pinMode(csPin, OUTPUT);
     digitalWrite(csPin, HIGH); // Ensure CS is high
-}
 
-void ELVH_SPI_Sensor::setSensorModel(const char* model) {
-    strncpy(sensorModel, model, sizeof(sensorModel) - 1);
-    sensorModel[sizeof(sensorModel) - 1] = '\0';
-}
-
-void ELVH_SPI_Sensor::readSensorData(uint8_t bytesToRead) {
-    digitalWrite(csPin, LOW); // Pull CS low to start communication
-    readSPI(bytesToRead);
-    digitalWrite(csPin, HIGH); // Pull CS high to end communication
-}
-
-void ELVH_SPI_Sensor::readSPI(uint8_t bytesToRead) {
-    uint32_t response = 0;
-    for (int i = 0; i < bytesToRead; i++) {
-        response <<= 8;
-        response |= SPI.transfer(0x00); // Send dummy byte to receive data
-    }
-
-    if (bytesToRead == 2) {
-        status = (response >> 14) & 0x03;
-        pressure = response & 0x3FFF;
-        temperature = 0; // Temperature data is not available
-    } else if (bytesToRead == 3) {
-        status = (response >> 22) & 0x03;
-        pressure = (response >> 8) & 0x3FFF;
-        temperature = (response & 0xFF) << 8; // Only MSB of temperature is available
-    } else if (bytesToRead == 4) {
-        status = (response >> 30) & 0x03;
-        pressure = (response >> 16) & 0x3FFF;
-        temperature = response & 0xFFFF;
-    } else {
-        status = 0xFF; // Invalid status
-        pressure = 0;
-        temperature = 0;
-    }
-
-    Serial.print("Status: ");
-    Serial.println(status, BIN);
-    switch (status) {
-        case 0b00:
-            Serial.println("No error");
-            Serial.print("Pressure: ");
-            Serial.println(convertPressure(pressure));
-            if (bytesToRead >= 3) {
-                Serial.print("Temperature: ");
-                Serial.println(convertTemperature(temperature));
-            }
-            break;
-        case 0b10:
-            Serial.println("No new data since last read");
-            break;
-        case 0b11:
-            Serial.println("Error");
-            break;
-        default:
-            Serial.println("Unknown status");
-            break;
-    }
-}
-
-float ELVH_SPI_Sensor::convertPressure(uint16_t rawPressure) {
     // Extract PPPP(P) and D from sensorModel
     char PPPP[6];
     char D;
@@ -78,7 +16,7 @@ float ELVH_SPI_Sensor::convertPressure(uint16_t rawPressure) {
     strncpy(PPPP, sensorModel, length);
     PPPP[length] = '\0';
     D = sensorModel[length + 8];
-
+    
     // Lookup table for pressure ranges (example values, replace with actual values)
     struct PressureRange {
         const char* range;
@@ -169,39 +107,115 @@ float ELVH_SPI_Sensor::convertPressure(uint16_t rawPressure) {
         {"B001A", 0, 1}, 
         {"B002A", 0, 2}
     };
-    float minPressure = 0.0;
-    float maxPressure = 0.0;
+    minPressure = 0.0;
+    maxPressure = 0.0;
     for (const auto& range : pressureRanges) {
         if (strcmp(PPPP, range.range) == 0) {
             minPressure = range.min;
             maxPressure = range.max;
+            Serial.print("Pressure range: ");
+            Serial.print(minPressure);
+            Serial.print(" to ");
+            Serial.println(maxPressure);
             break;
         }
         else {
             Serial.println("Invalid sensor model");
         }
     }
-
-    // Calculate the pressure based on the transfer function
-    float pressure = 0.0;
+    pFactor = (maxPressure - minPressure)
     switch (D) {
         case 'A':
-            pressure = minPressure + (maxPressure - minPressure) * (rawPressure - 1638) / (14745 - 1638);
+            pOffset = 1638;
+            pFactor = pFactor  / (14745 - pOffset);
             break;
         case 'B':
-            pressure = minPressure + (maxPressure - minPressure) * (rawPressure - 819) / (15562 - 819);
+            pOffset = 819;
+            pFactor = pFactor / (15562 - pOffset);
             break;
         case 'C':
-            pressure = minPressure + (maxPressure - minPressure) * (rawPressure - 819) / (13926 - 819);
+            pOffset = 819; 
+            pFactor = pFactor / (13926 - pOffset);
             break;
         case 'D':
-            pressure = minPressure + (maxPressure - minPressure) * (rawPressure - 655) / (15360 - 655);
+            pOffset = 819;
+            pFactor = pFactor / (15360 - pOffset);
             break;
         default:
-            pressure = 0.0; // Invalid transfer function
+            pFactor = 0.0; // Invalid transfer function
             break;
     }
 
+
+}
+
+void ELVH_SPI_Sensor::setSensorModel(const char* model) {
+    strncpy(sensorModel, model, sizeof(sensorModel) - 1);
+    sensorModel[sizeof(sensorModel) - 1] = '\0';
+}
+
+void ELVH_SPI_Sensor::readSensorData(uint8_t bytesToRead) {
+    digitalWrite(csPin, LOW); // Pull CS low to start communication
+    readSPI(bytesToRead);
+    digitalWrite(csPin, HIGH); // Pull CS high to end communication
+}
+
+void ELVH_SPI_Sensor::readSPI(uint8_t bytesToRead) {
+    uint32_t response = 0;
+    for (int i = 0; i < bytesToRead; i++) {
+        response <<= 8;
+        response |= SPI.transfer(0x00); // Send dummy byte to receive data
+    }
+
+    if (bytesToRead == 2) {
+        status = (response >> 14) & 0x03;
+        pressure = response & 0x3FFF;
+        temperature = 0; // Temperature data is not available
+    } else if (bytesToRead == 3) {
+        status = (response >> 22) & 0x03;
+        pressure = (response >> 8) & 0x3FFF;
+        temperature = (response & 0xFF) << 8; // Only MSB of temperature is available
+    } else if (bytesToRead == 4) {
+        status = (response >> 30) & 0x03;
+        pressure = (response >> 16) & 0x3FFF;
+        temperature = response & 0xFFFF;
+    } else {
+        status = 0xFF; // Invalid status
+        pressure = 0;
+        temperature = 0;
+    }
+
+    Serial.print("Status: ");
+    Serial.println(status, BIN);
+    switch (status) {
+        case 0b00:
+            Serial.println("No error");
+            Serial.print("Pressure: ");
+            Serial.println(convertPressure(pressure));
+            if (bytesToRead >= 3) {
+                Serial.print("Temperature: ");
+                Serial.println(convertTemperature(temperature));
+            }
+            break;
+        case 0b10:
+            Serial.println("No new data since last read");
+            break;
+        case 0b11:
+            Serial.println("Error");
+            break;
+        default:
+            Serial.println("Unknown status");
+            break;
+    }
+}
+
+float ELVH_SPI_Sensor::convertPressure(uint16_t rawPressure) {
+    
+    // Calculate the pressure based on the transfer function
+    float pressure = 0.0;
+
+    pressure = minPressure + (rawPressure - pOffset) * pFactor;
+ 
     return pressure;
 }
 
