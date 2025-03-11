@@ -8,6 +8,7 @@ class ELVH_SPI_Sensor {
 public:
     void begin(uint8_t csPin);
     void readSensorData(uint8_t bytesToRead = 4);
+    void getStatus();
     float getPressure();
     float getTemperature();
     void setSensorModel(const char* model);

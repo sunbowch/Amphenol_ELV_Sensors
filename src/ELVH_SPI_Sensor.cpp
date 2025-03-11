@@ -217,3 +217,8 @@ float ELVH_SPI_Sensor::getPressure() {
 float ELVH_SPI_Sensor::getTemperature() {
     return convertTemperature(temperature);
 }
+
+float ELVH_SPI_Sensor::getStatus() {
+    ReadSensorData(2);
+    return status;
+}
