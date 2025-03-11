@@ -28,7 +28,6 @@ void ELVH_SPI_Sensor::readSPI(uint8_t bytesToRead) {
         response |= SPI.transfer(0x00); // Send dummy byte to receive data
     }
 
-    uint8_t status;
     if (bytesToRead == 2) {
         status = (response >> 14) & 0x03;
         pressure = response & 0x3FFF;

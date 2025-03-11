@@ -16,6 +16,7 @@ public:
 private:
     uint16_t pressure;
     uint16_t temperature;
+    int status;
     char sensorModel[20];
     uint8_t csPin; // New member variable to store the CS pin
     void readSPI(uint8_t bytesToRead);
