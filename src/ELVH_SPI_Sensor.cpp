@@ -172,11 +172,11 @@ void ELVH_SPI_Sensor::readSPI(uint8_t bytesToRead) {
     } else if (bytesToRead == 3) {
         status = (response >> 22) & 0x03;
         pressure = (response >> 8) & 0x3FFF;
-        temperature = (response & 0xFF) << 8; // Only MSB of temperature is available
+        temperature = (response & 0xFF) << 3; // Only MSB of temperature is available
     } else if (bytesToRead == 4) {
         status = (response >> 30) & 0x03;
         pressure = (response >> 16) & 0x3FFF;
-        temperature = response & 0xFFFF;
+        temperature = (response & 0xFFFF) >> 5;
     } else {
         status = 0xFF; // Invalid status
         pressure = 0;
