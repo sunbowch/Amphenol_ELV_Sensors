@@ -1,0 +1,27 @@
+{
+  "name": "ELVH_SPI_Sensor",
+  "version": "1.0.0",
+  "description": "Library for interfacing with ELVH SPI pressure sensors",
+  "keywords": "SPI, sensor, pressure",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sunbowch/ELVH_SPI_Sensor"
+  },
+  "authors": [
+    {
+      "name": "Luc JOB",
+      "email": "contact@luc-job.ch",
+      "maintainer": true
+    }
+  ],
+  "frameworks": "arduino",
+  "platforms": [
+    "atmelavr",
+    "espressif8266",
+    "espressif32"
+  ],
+  "dependencies": {
+    "name": "SPI",
+    "frameworks": "arduino"
+  }
+}

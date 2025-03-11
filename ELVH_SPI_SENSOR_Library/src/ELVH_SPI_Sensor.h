@@ -1,0 +1,24 @@
+#ifndef ELVH_SPI_SENSOR_H
+#define ELVH_SPI_SENSOR_H
+
+#include <Arduino.h>
+#include <SPI.h>
+
+class ELVH_SPI_Sensor {
+public:
+    void begin();
+    void readSensorData(uint8_t bytesToRead = 4);
+    float getPressure();
+    float getTemperature();
+    void setSensorModel(const char* model);
+
+private:
+    uint16_t pressure;
+    uint16_t temperature;
+    char sensorModel[20];
+    void readSPI(uint8_t bytesToRead);
+    float convertPressure(uint16_t rawPressure);
+    float convertTemperature(uint16_t rawTemperature);
+};
+
+#endif // ELVH_SPI_SENSOR_H
