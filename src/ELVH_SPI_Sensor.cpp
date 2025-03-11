@@ -218,7 +218,27 @@ float ELVH_SPI_Sensor::getTemperature() {
     return convertTemperature(temperature);
 }
 
-float ELVH_SPI_Sensor::getStatus() {
+int ELVH_SPI_Sensor::getStatus() {
     ReadSensorData(2);
+    switch (status) {
+        case 0b00:
+            Serial.println("No error");
+            Serial.print("Pressure: ");
+            Serial.println(convertPressure(pressure));
+            if (bytesToRead >= 3) {
+                Serial.print("Temperature: ");
+                Serial.println(convertTemperature(temperature));
+            }
+            break;
+        case 0b10:
+            Serial.println("No new data since last read");
+            break;
+        case 0b11:
+            Serial.println("Error");
+            break;
+        default:
+            Serial.println("Unknown status");
+            break;
+    }
     return status;
 }
