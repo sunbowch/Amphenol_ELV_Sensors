@@ -230,7 +230,7 @@ float ELVH_SPI_Sensor::getTemperature() {
 }
 
 int ELVH_SPI_Sensor::getStatus() {
-    readSensorData(4);
+    //readSensorData(4);
     switch (status) {
         case 0b00:
             Serial.println("Ready");
