@@ -8,27 +8,27 @@
         {
             "name": "PlatformIO",
             "includePath": [
-                "D:/Luc/OneDrive/Documents/PlatformIO/Projects/Amphenol_SPI_ELV_Sensors/src",
+                "D:/Luc/OneDrive/Documents/PlatformIO/Projects/Amphenol_ELV_Sensors/src",
+                "C:/Users/Luc JOB/.platformio/packages/framework-arduino-avr/libraries/Wire/src",
                 "C:/Users/Luc JOB/.platformio/packages/framework-arduino-avr/libraries/SPI/src",
                 "C:/Users/Luc JOB/.platformio/packages/framework-arduino-avr/cores/arduino",
                 "C:/Users/Luc JOB/.platformio/packages/framework-arduino-avr/variants/standard",
                 "C:/Users/Luc JOB/.platformio/packages/framework-arduino-avr/libraries/EEPROM/src",
                 "C:/Users/Luc JOB/.platformio/packages/framework-arduino-avr/libraries/HID/src",
                 "C:/Users/Luc JOB/.platformio/packages/framework-arduino-avr/libraries/SoftwareSerial/src",
-                "C:/Users/Luc JOB/.platformio/packages/framework-arduino-avr/libraries/Wire/src",
                 ""
             ],
             "browse": {
                 "limitSymbolsToIncludedHeaders": true,
                 "path": [
-                    "D:/Luc/OneDrive/Documents/PlatformIO/Projects/Amphenol_SPI_ELV_Sensors/src",
+                    "D:/Luc/OneDrive/Documents/PlatformIO/Projects/Amphenol_ELV_Sensors/src",
+                    "C:/Users/Luc JOB/.platformio/packages/framework-arduino-avr/libraries/Wire/src",
                     "C:/Users/Luc JOB/.platformio/packages/framework-arduino-avr/libraries/SPI/src",
                     "C:/Users/Luc JOB/.platformio/packages/framework-arduino-avr/cores/arduino",
                     "C:/Users/Luc JOB/.platformio/packages/framework-arduino-avr/variants/standard",
                     "C:/Users/Luc JOB/.platformio/packages/framework-arduino-avr/libraries/EEPROM/src",
                     "C:/Users/Luc JOB/.platformio/packages/framework-arduino-avr/libraries/HID/src",
                     "C:/Users/Luc JOB/.platformio/packages/framework-arduino-avr/libraries/SoftwareSerial/src",
-                    "C:/Users/Luc JOB/.platformio/packages/framework-arduino-avr/libraries/Wire/src",
                     ""
                 ]
             },

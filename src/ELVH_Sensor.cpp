@@ -12,7 +12,15 @@ ELVH_Sensor::ELVH_Sensor(const char* model) {
     setSensorModel(model);
 }
 
-void ELVH_Sensor::begin(uint8_t csPin) {
+void ELVH_Sensor::begin() {
+    if (isI2C) {
+        beginI2C();
+    } else {
+        beginSPI(csPin);
+    }
+}
+
+void ELVH_Sensor::beginSPI(uint8_t csPin) {
     this->csPin = csPin; // Store the CS pin
     this->isI2C = false; // Indicate that this is not an I2C sensor
     SPI.begin();
@@ -59,9 +67,9 @@ void ELVH_Sensor::setSensorModel(const char* model) {
     if (thirdDash != nullptr && thirdDash[1] != '\0') {
         char N = thirdDash[1]; // N is the character after the 3rd '-'
         if (N == 'S') {
-            begin(csPin);
+            isI2C = false;
         } else if (N >= '2' && N <= '7') {
-            beginI2C();
+            isI2C = true;   
         }
     }
 }
