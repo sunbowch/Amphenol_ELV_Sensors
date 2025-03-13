@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include "ELVH_Sensor.h"
 
-ELVH_Sensor sensor("150G-HAND-C-PSA4-ND", 5); // Initialize with model and CS pin
+ELVH_Sensor sensor("150G-HAND-C-PSA4", 5); // Initialize with model and CS pin
 
 void setup() {
     Serial.begin(115200);

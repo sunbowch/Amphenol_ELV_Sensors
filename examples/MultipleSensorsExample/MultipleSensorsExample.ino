@@ -4,9 +4,9 @@
 #define NUM_SENSORS 3
 
 ELVH_Sensor sensors[NUM_SENSORS] = {
-    ELVH_Sensor("ELVH-150G-HAND-C-PSA4-ND", 10),
-    ELVH_Sensor("ELVH-150G-HAND-C-PSA4-ND", 11),
-    ELVH_Sensor("ELVH-L10D-HRRD-C-N2A4-ND")
+    ELVH_Sensor("150G-HAND-C-PSA4", 10),
+    ELVH_Sensor("150G-HAND-C-PSA4", 11),
+    ELVH_Sensor("L10D-HRRD-C-N2A4")
 };
 
 void setup() {
