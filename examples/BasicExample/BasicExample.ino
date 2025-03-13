@@ -1,14 +1,18 @@
 #include <Arduino.h>
-#include <ELVH_SPI_Sensor.h>
+#include "ELVH_Sensor.h"
 
-ELVH_SPI_Sensor sensor;
+ELVH_Sensor sensor("150G-HAND-C-PSA4-ND", 5); // Initialize with model and CS pin
 
 void setup() {
     Serial.begin(115200);
-    sensor.begin();
+    sensor.setDesiredUnit("bar"); // Set desired unit
 }
 
 void loop() {
     sensor.readSensorData(4); // Read 4 bytes by default
+    Serial.print("Pressure: ");
+    Serial.println(sensor.getPressure());
+    Serial.print("Temperature: ");
+    Serial.println(sensor.getTemperature());
     delay(1000); // Read data every second
 }

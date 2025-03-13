@@ -1,14 +1,72 @@
-#include "ELVH_SPI_Sensor.h"
+#include "ELVH_Sensor.h"
 #include <Arduino.h>
 
-void ELVH_SPI_Sensor::begin(uint8_t csPin) {
+// Constructor to initialize the sensor with a model and csPin for SPI
+ELVH_Sensor::ELVH_Sensor(const char* model, uint8_t csPin) {
+    setSensorModel(model);
+    this->csPin = csPin;
+}
+
+// Constructor to initialize the sensor with a model for I2C
+ELVH_Sensor::ELVH_Sensor(const char* model) {
+    setSensorModel(model);
+}
+
+void ELVH_Sensor::begin(uint8_t csPin) {
     this->csPin = csPin; // Store the CS pin
-    //Serial.begin(9600);
+    this->isI2C = false; // Indicate that this is not an I2C sensor
     SPI.begin();
     SPI.beginTransaction(SPISettings(800000, MSBFIRST, SPI_MODE0)); // Set SPI clock to 800 kHz
     pinMode(csPin, OUTPUT);
     digitalWrite(csPin, HIGH); // Ensure CS is high
+    setPressureRangeAndTransferFunction();
+}
 
+void ELVH_Sensor::beginI2C() {
+    this->isI2C = true; // Indicate that this is an I2C sensor
+    Wire.begin();
+    setPressureRangeAndTransferFunction();
+}
+
+void ELVH_Sensor::setSensorModel(const char* model) {
+    strncpy(sensorModel, model, sizeof(sensorModel) - 1);
+    sensorModel[sizeof(sensorModel) - 1] = '\0';
+    
+    // Set default unit based on the first character of the sensor model
+    switch (sensorModel[0]) {
+        case '0':
+        case '1':
+            strncpy(unit, "psi", sizeof(unit) - 1);
+            break;
+        case 'M':
+            strncpy(unit, "mbar", sizeof(unit) - 1);
+            break;
+        case 'B':
+            strncpy(unit, "bar", sizeof(unit) - 1);
+            break;
+        case 'L':
+        case 'F':
+            strncpy(unit, "inH2O", sizeof(unit) - 1);
+            break;
+        default:
+            strncpy(unit, "psi", sizeof(unit) - 1);
+            break;
+    }
+    unit[sizeof(unit) - 1] = '\0';
+
+    // Find the 3rd '-' separator
+    const char* thirdDash = strchr(strchr(strchr(sensorModel, '-') + 1, '-') + 1, '-');
+    if (thirdDash != nullptr && thirdDash[1] != '\0') {
+        char N = thirdDash[1]; // N is the character after the 3rd '-'
+        if (N == 'S') {
+            begin(csPin);
+        } else if (N >= '2' && N <= '7') {
+            beginI2C();
+        }
+    }
+}
+
+void ELVH_Sensor::setPressureRangeAndTransferFunction() {
     // Extract PPPP(P) and D from sensorModel
     char PPPP[6];
     char D;
@@ -147,18 +205,75 @@ void ELVH_SPI_Sensor::begin(uint8_t csPin) {
     }
 }
 
-void ELVH_SPI_Sensor::setSensorModel(const char* model) {
-    strncpy(sensorModel, model, sizeof(sensorModel) - 1);
-    sensorModel[sizeof(sensorModel) - 1] = '\0';
+void ELVH_Sensor::setDesiredUnit(const char* unit) {
+    strncpy(this->unit, unit, sizeof(this->unit) - 1);
+    this->unit[sizeof(this->unit) - 1] = '\0';
 }
 
-void ELVH_SPI_Sensor::readSensorData(uint8_t bytesToRead) {
-    digitalWrite(csPin, LOW); // Pull CS low to start communication
-    readSPI(bytesToRead);
-    digitalWrite(csPin, HIGH); // Pull CS high to end communication
+float ELVH_Sensor::convertToDesiredUnit(float pressure) {
+    float pressureInPsi = pressure;
+
+    // Convert from the current unit to psi
+    if (strcmp(unit, "bar") == 0) {
+        pressureInPsi = pressure / 0.0689476;
+    } else if (strcmp(unit, "mbar") == 0) {
+        pressureInPsi = pressure / 68.9476;
+    } else if (strcmp(unit, "inH2O") == 0) {
+        pressureInPsi = pressure / 27.6807;
+    }
+
+    // Convert from psi to the desired unit
+    if (strcmp(unit, "psi") == 0) {
+        return pressureInPsi;
+    } else if (strcmp(unit, "bar") == 0) {
+        return pressureInPsi * 0.0689476;
+    } else if (strcmp(unit, "mbar") == 0) {
+        return pressureInPsi * 68.9476;
+    } else if (strcmp(unit, "inH2O") == 0) {
+        return pressureInPsi * 27.6807;
+    } else {
+        return pressureInPsi; // Default to psi if unit is not recognized
+    }
 }
 
-void ELVH_SPI_Sensor::readSPI(uint8_t bytesToRead) {
+void ELVH_Sensor::readSensorData(uint8_t bytesToRead) {
+    if (isI2C) {
+        readI2C(bytesToRead);
+    } else {
+        digitalWrite(csPin, LOW); // Pull CS low to start communication
+        readSPI(bytesToRead);
+        digitalWrite(csPin, HIGH); // Pull CS high to end communication
+    }
+}
+
+void ELVH_Sensor::readI2C(uint8_t bytesToRead) {
+    Wire.beginTransmission(i2cAddress);
+    Wire.write(0x00); // Dummy write to initiate read
+    Wire.endTransmission(false); // Send repeated start
+
+    Wire.requestFrom(i2cAddress, bytesToRead); // Request bytesToRead bytes
+
+    if (Wire.available() >= 2) {
+        uint8_t msb = Wire.read();
+        uint8_t lsb = Wire.read();
+        status = (msb >> 6) & 0x03;
+        pressure = ((msb & 0x3F) << 8) | lsb;
+    }
+
+    if (bytesToRead >= 3 && Wire.available() >= 1) {
+        uint8_t msb = Wire.read();
+        temperature = msb << 3;
+    }
+
+    if (bytesToRead == 4 && Wire.available() >= 1) {
+        uint8_t lsb = Wire.read();
+        temperature |= (lsb >> 5) & 0x07;
+    }
+
+    Wire.endTransmission();
+}
+
+void ELVH_Sensor::readSPI(uint8_t bytesToRead) {
     uint32_t response = 0;
     for (int i = 0; i < bytesToRead; i++) {
         response <<= 8;
@@ -189,7 +304,7 @@ void ELVH_SPI_Sensor::readSPI(uint8_t bytesToRead) {
         case 0b00:
             Serial.println("No error");
             Serial.print("Pressure: ");
-            Serial.println(convertPressure(pressure));
+            Serial.println(convertToDesiredUnit(convertPressure(pressure)));
             if (bytesToRead >= 3) {
                 Serial.print("Temperature: ");
                 Serial.println(convertTemperature(temperature));
@@ -207,30 +322,25 @@ void ELVH_SPI_Sensor::readSPI(uint8_t bytesToRead) {
     }
 }
 
-float ELVH_SPI_Sensor::convertPressure(uint16_t rawPressure) {
-    
+float ELVH_Sensor::convertPressure(uint16_t rawPressure) {
     // Calculate the pressure based on the transfer function
-    float pressure = 0.0;
-
-    pressure = minPressure + (rawPressure - pOffset) * pFactor;
- 
+    float pressure = minPressure + (rawPressure - pOffset) * pFactor;
     return pressure;
 }
 
-float ELVH_SPI_Sensor::convertTemperature(uint16_t rawTemperature) {
+float ELVH_Sensor::convertTemperature(uint16_t rawTemperature) {
     return rawTemperature * (200.0 / (2047.0)) - 50.0;
 }
 
-float ELVH_SPI_Sensor::getPressure() {
-    return convertPressure(pressure);
+float ELVH_Sensor::getPressure() {
+    return convertToDesiredUnit(convertPressure(pressure));
 }
 
-float ELVH_SPI_Sensor::getTemperature() {
+float ELVH_Sensor::getTemperature() {
     return convertTemperature(temperature);
 }
 
-int ELVH_SPI_Sensor::getStatus() {
-    //readSensorData(4);
+int ELVH_Sensor::getStatus() {
     switch (status) {
         case 0b00:
             Serial.println("Ready");
@@ -246,4 +356,11 @@ int ELVH_SPI_Sensor::getStatus() {
             break;
     }
     return status;
+}
+
+// Method to set the CS pin to another value
+void ELVH_Sensor::setCSPin(uint8_t csPin) {
+    this->csPin = csPin;
+    pinMode(csPin, OUTPUT);
+    digitalWrite(csPin, HIGH); // Ensure CS is high
 }

@@ -1,17 +1,19 @@
 #include <Arduino.h>
-#include "ELVH_SPI_Sensor.h"
+#include "ELVH_Sensor.h"
 
 #define NUM_SENSORS 3
 
-ELVH_SPI_Sensor sensors[NUM_SENSORS];
+ELVH_Sensor sensors[NUM_SENSORS] = {
+    ELVH_Sensor("ELVH-150G-HAND-C-PSA4-ND", 10),
+    ELVH_Sensor("ELVH-150G-HAND-C-PSA4-ND", 11),
+    ELVH_Sensor("ELVH-L10D-HRRD-C-N2A4-ND")
+};
 
 void setup() {
     Serial.begin(9600);
-    uint8_t csPins[NUM_SENSORS] = {10, 11, 12}; // Define CS pins for each sensor
 
     for (int i = 0; i < NUM_SENSORS; i++) {
-        sensors[i].begin(csPins[i]);
-        sensors[i].setSensorModel("L10D-001A"); // Example model, set accordingly
+        sensors[i].setDesiredUnit("bar"); // Set desired unit for each sensor
     }
 }
 
