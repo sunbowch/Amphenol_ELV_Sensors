@@ -9,7 +9,8 @@ class ELVH_Sensor {
 public:
     ELVH_Sensor(const char* model, uint8_t csPin); // Constructor for SPI
     ELVH_Sensor(const char* model); // Constructor for I2C
-    void begin(uint8_t csPin = SS); // Default to hardware CS pin if no csPin is defined
+    void begin();
+    void beginSPI(uint8_t csPin = SS); // Default to hardware CS pin if no csPin is defined
     void beginI2C();
     void readSensorData(uint8_t bytesToRead = 4);
     int getStatus();
