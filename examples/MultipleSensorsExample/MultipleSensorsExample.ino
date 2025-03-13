@@ -13,6 +13,7 @@ void setup() {
     Serial.begin(9600);
 
     for (int i = 0; i < NUM_SENSORS; i++) {
+        sensors[i].begin(); // Initialize each sensor
         sensors[i].setDesiredUnit("bar"); // Set desired unit for each sensor
     }
 }
