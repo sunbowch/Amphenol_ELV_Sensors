@@ -1,2 +1,2 @@
 # Amphenol_ELV_Sensors
-For sensors series with only MISO output
+For sensors series with digital output
