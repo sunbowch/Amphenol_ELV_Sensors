@@ -21,8 +21,8 @@ public:
     void setCSPin(uint8_t csPin);
 
 private:
-    uint16_t minPressure;
-    uint16_t maxPressure;
+    float minPressure;
+    float maxPressure;
     float pFactor;
     uint16_t pOffset;
     uint16_t pressure;
