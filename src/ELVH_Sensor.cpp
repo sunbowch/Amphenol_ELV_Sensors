@@ -13,6 +13,7 @@ ELVH_Sensor::ELVH_Sensor(const char* model) {
 }
 
 void ELVH_Sensor::begin() {
+    setSensorParameters();
     if (isI2C) {
         beginI2C();
     } else {
@@ -27,57 +28,23 @@ void ELVH_Sensor::beginSPI(uint8_t csPin) {
     SPI.beginTransaction(SPISettings(800000, MSBFIRST, SPI_MODE0)); // Set SPI clock to 800 kHz
     pinMode(csPin, OUTPUT);
     digitalWrite(csPin, HIGH); // Ensure CS is high
-    setPressureRangeAndTransferFunction();
 }
 
 void ELVH_Sensor::beginI2C() {
     this->isI2C = true; // Indicate that this is an I2C sensor
     Wire.begin();
-    setPressureRangeAndTransferFunction();
 }
 
 void ELVH_Sensor::setSensorModel(const char* model) {
     strncpy(sensorModel, model, sizeof(sensorModel) - 1);
     sensorModel[sizeof(sensorModel) - 1] = '\0';
-    
-    // Set default unit based on the first character of the sensor model
-    switch (sensorModel[0]) {
-        case '0':
-        case '1':
-            strncpy(unit, "psi", sizeof(unit) - 1);
-            break;
-        case 'M':
-            strncpy(unit, "mbar", sizeof(unit) - 1);
-            break;
-        case 'B':
-            strncpy(unit, "bar", sizeof(unit) - 1);
-            break;
-        case 'L':
-        case 'F':
-            strncpy(unit, "inH2O", sizeof(unit) - 1);
-            break;
-        default:
-            strncpy(unit, "psi", sizeof(unit) - 1);
-            break;
-    }
-    unit[sizeof(unit) - 1] = '\0';
-
-    // Find the 3rd '-' separator
-    const char* thirdDash = strchr(strchr(strchr(sensorModel, '-') + 1, '-') + 1, '-');
-    if (thirdDash != nullptr && thirdDash[1] != '\0') {
-        char N = thirdDash[1]; // N is the character after the 3rd '-'
-        if (N == 'S') {
-            isI2C = false;
-        } else if (N >= '2' && N <= '7') {
-            isI2C = true;   
-        }
-    }
 }
 
-void ELVH_Sensor::setPressureRangeAndTransferFunction() {
+void ELVH_Sensor::setSensorParameters() {
     // Extract PPPP(P) and D from sensorModel
     char PPPP[6];
     char D;
+    int fullScaleSpan=16384;
     int length = strchr(sensorModel, '-') - sensorModel;
     strncpy(PPPP, sensorModel, length);
     PPPP[length] = '\0';
@@ -90,91 +57,36 @@ void ELVH_Sensor::setPressureRangeAndTransferFunction() {
         float max;
     } pressureRanges[] = {
         {"F50D", -0.5, 0.5}, 
-        {"L01D", -1, 1}, 
-        {"L02D", -2, 2}, 
-        {"L04D", -4, 4}, 
-        {"L05D", -5, 5}, 
-        {"L10D", -10, 10}, 
-        {"L20D", -20, 20}, 
-        {"L30D", -30, 30}, 
-        {"L60D", -60, 60}, 
-        {"L01G", 0, 1}, 
-        {"L02G", 0, 2}, 
-        {"L04G", 0, 4}, 
-        {"L05G", 0, 5}, 
-        {"L10G", 0, 10}, 
-        {"L20G", 0, 20}, 
-        {"L30G", 0, 30}, 
-        {"L60G", 0, 60}, 
-        {"001D", -1, 1}, 
-        {"005D", -5, 5}, 
-        {"015D", -15, 15}, 
-        {"030D", -30, 30}, 
-        {"060D", -60, 60}, 
-        {"001G", 0, 1}, 
-        {"005G", 0, 5}, 
-        {"015G", 0, 15}, 
-        {"030G", 0, 30}, 
-        {"060G", 0, 60}, 
-        {"100G", 0, 100}, 
-        {"150G", 0, 150}, 
-        {"015A", 0, 15}, 
-        {"030A", 0, 30}, 
-        {"060A", 0, 60}, 
-        {"100A", 0, 100}, 
-        {"150A", 0, 150}, 
-        {"M100D", -100, 100}, 
-        {"M160D", -160, 160}, 
-        {"M250D", -250, 250}, 
+        {"L01D", -1, 1},{"L02D", -2, 2},{"L04D", -4, 4},{"L05D", -5, 5}, 
+        {"L10D", -10, 10},{"L20D", -20, 20},{"L30D", -30, 30},{"L60D", -60, 60}, 
+        {"L01G", 0, 1},{"L02G", 0, 2},{"L04G", 0, 4},{"L05G", 0, 5}, 
+        {"L10G", 0, 10},{"L20G", 0, 20},{"L30G", 0, 30},{"L60G", 0, 60}, 
+        {"001D", -1, 1},{"005D", -5, 5},{"015D", -15, 15},{"030D", -30, 30},{"060D", -60, 60}, 
+        {"001G", 0, 1},{"005G", 0, 5},{"015G", 0, 15},{"030G", 0, 30},{"060G", 0, 60}, 
+        {"100G", 0, 100},{"150G", 0, 150}, 
+        {"015A", 0, 15},{"030A", 0, 30},{"060A", 0, 60},{"100A", 0, 100},{"150A", 0, 150}, 
+        {"M100D", -100, 100},{"M160D", -160, 160},{"M250D", -250, 250},{"M500D", -500, 500}, 
+        {"M100G", 0, 100},{"M160G", 0, 160},{"M250G", 0, 250},{"M500G", 0, 500}, 
+        {"B001D", -1, 1},{"B001G", 0, 1},{"BF25G", 0, 2.5},{"B005G", 0, 5},{"B010G", 0, 10}, 
+        {"B001A", 0, 1},{"B002A", 0, 2},
+        {"001D", -1, 1},{"001G", 0, 1},{"100G", 0, 100}, 
+        {"MF25D", -2.5, 2.5},{"MF12D", -12.5, 12.5},{"M025D", -25, 25},{"M050D", -50, 50}, 
+        {"M075D", -75, 75},{"M100D", -100, 100},{"M160D", -160, 160},{"M250D", -250, 250}, 
         {"M500D", -500, 500}, 
-        {"M100G", 0, 100}, 
-        {"M160G", 0, 160}, 
-        {"M250G", 0, 250}, 
-        {"M500G", 0, 500}, 
-        {"B001D", -1, 1}, 
+        {"MF25G", 0, 2.5},{"MF12G", 0, 12.5}, 
+        {"M025G", 0, 25},{"M050G", 0, 50},{"M075G", 0, 75},{"M100G", 0, 100}, 
+        {"M160G", 0, 160},{"M250G", 0, 250},{"M500G", 0, 500},{"MN50G", -500, 0}, 
+        {"M611A", 600, 1100},
+        {"B001D", -1, 1},{"BF25D", -2.5, 2.5},
+        {"B005D", -5, 5},{"B010D", -10, 10}, 
+        {"BN01G", -1, 0},
         {"B001G", 0, 1}, 
         {"BF25G", 0, 2.5}, 
-        {"B005G", 0, 5}, 
-        {"B010G", 0, 10}, 
-        {"B001A", 0, 1}, 
-        {"B002A", 0, 2}, 
-        {"001D", -1, 1}, 
-        {"001G", 0, 1}, 
-        {"100G", 0, 100}, 
-        {"MF25D", -2.5, 2.5}, 
-        {"MF12D", -12.5, 12.5}, 
-        {"M025D", -25, 25}, 
-        {"M050D", -50, 50}, 
-        {"M075D", -75, 75}, 
-        {"M100D", -100, 100}, 
-        {"M160D", -160, 160}, 
-        {"M250D", -250, 250}, 
-        {"M500D", -500, 500}, 
-        {"MF25G", 0, 2.5}, 
-        {"MF12G", 0, 12.5}, 
-        {"M025G", 0, 25}, 
-        {"M050G", 0, 50}, 
-        {"M075G", 0, 75}, 
-        {"M100G", 0, 100}, 
-        {"M160G", 0, 160}, 
-        {"M250G", 0, 250}, 
-        {"M500G", 0, 500}, 
-        {"MN50G", -500, 0}, 
-        {"M611A", 600, 1100}, 
-        {"B001D", -1, 1}, 
-        {"BF25D", -2.5, 2.5}, 
-        {"B005D", -5, 5}, 
-        {"B010D", -10, 10}, 
-        {"BN01G", -1, 0}, 
-        {"B001G", 0, 1}, 
-        {"BF25G", 0, 2.5}, 
-        {"B005G", 0, 5}, 
-        {"B010G", 0, 10}, 
-        {"B001A", 0, 1}, 
-        {"B002A", 0, 2}
+        {"B005G", 0, 5},{"B010G", 0, 10}, 
+        {"B001A", 0, 1},{"B002A", 0, 2}
     };
     minPressure = 0.0;
-    maxPressure = 0.0;
+    maxPressure = 16384.0;
     for (const auto& range : pressureRanges) {
         if (strcmp(PPPP, range.range) == 0) {
             minPressure = range.min;
@@ -189,58 +101,127 @@ void ELVH_Sensor::setPressureRangeAndTransferFunction() {
             Serial.println("Invalid sensor model");
         }
     }
-    pFactor = (maxPressure - minPressure);
-    switch (D) {
-        case 'A':
-            pOffset = 1638;
-            pFactor = pFactor  / (14745 - pOffset);
+    if (maxPressure+minPressure == 0){              // differential sensors
+        switch (D) {
+            case 'A':
+                fullScaleSpan = 13108;
+                pOffset = 8140;
+                break;
+            case 'B':
+                fullScaleSpan = 14746;
+                pOffset = 8140;
+                break;
+            case 'C':
+                fullScaleSpan = 13108;
+                pOffset = 7373;
+                break;
+            case 'D':
+                fullScaleSpan = 14746;
+                pOffset = 8028;
+                break;
+            default:
+                pOffset = 8192;
+                fullScaleSpan = 16384; 
+                break;
+        }
+
+    }
+    else{
+        switch (D) {
+            case 'A':
+                pOffset = 1638;
+                fullScaleSpan = 13107;
+                break;
+            case 'B':
+                pOffset = 819;
+                fullScaleSpan = 14746;
+                break;
+            case 'C':
+                pOffset = 819; 
+                fullScaleSpan = 13107;
+                break;
+            case 'D':
+                pOffset = 655;
+                fullScaleSpan = 14746;
+                break;
+            default:
+                pOffset = 0;
+                fullScaleSpan = 16384; // Invalid transfer function
+                break;
+        }
+    }
+    pFactor = (maxPressure - minPressure) / fullScaleSpan;
+
+    // Set default unit based on the first character of the sensor model
+    switch (sensorModel[0]) {
+        case '0':
+        case '1':
+            unit = psi;
+            break;
+        case 'M':
+            unit = mbar;
             break;
         case 'B':
-            pOffset = 819;
-            pFactor = pFactor / (15562 - pOffset);
+            unit = bar;
             break;
-        case 'C':
-            pOffset = 819; 
-            pFactor = pFactor / (13926 - pOffset);
-            break;
-        case 'D':
-            pOffset = 819;
-            pFactor = pFactor / (15360 - pOffset);
+        case 'L':
+        case 'F':
+            unit = inH2O;
             break;
         default:
-            pFactor = 0.0; // Invalid transfer function
+            unit = psi;
             break;
+    }
+
+    // Find the 3rd '-' separator
+    const char* thirdDash = strchr(strchr(strchr(sensorModel, '-') + 1, '-') + 1, '-');
+    if (thirdDash != nullptr && thirdDash[1] != '\0') {
+        char N = thirdDash[2]; // N is the 2nd character after the 3rd '-'
+        Serial.print("N: ");
+        Serial.println(N);
+        if (N == 'S') {
+            isI2C = false;
+        } else if (N >= '2' && N <= '7') {
+            isI2C = true;   
+            i2cAddress = (N - '0') << 4 | 0x08; // Set I2C address to 0xN8
+        }
     }
 }
 
-void ELVH_Sensor::setDesiredUnit(const char* unit) {
-    strncpy(this->unit, unit, sizeof(this->unit) - 1);
-    this->unit[sizeof(this->unit) - 1] = '\0';
+void ELVH_Sensor::setDesiredUnit(Unit unit) {
+    dunit = unit;
 }
 
 float ELVH_Sensor::convertToDesiredUnit(float pressure) {
     float pressureInPsi = pressure;
 
     // Convert from the current unit to psi
-    if (strcmp(unit, "bar") == 0) {
-        pressureInPsi = pressure / 0.0689476;
-    } else if (strcmp(unit, "mbar") == 0) {
-        pressureInPsi = pressure / 68.9476;
-    } else if (strcmp(unit, "inH2O") == 0) {
-        pressureInPsi = pressure / 27.6807;
+    switch (unit) {
+        case bar:
+            pressureInPsi = pressure / 0.0689476;
+            break;
+        case mbar:
+            pressureInPsi = pressure / 68.9476;
+            break;
+        case inH2O:
+            pressureInPsi = pressure / 27.6807;
+            break;
+        case psi:
+        default:
+            break;
     }
 
     // Convert from psi to the desired unit
-    if (strcmp(unit, "psi") == 0) {
-        return pressureInPsi;
-    } else if (strcmp(unit, "bar") == 0) {
-        return pressureInPsi * 0.0689476;
-    } else if (strcmp(unit, "mbar") == 0) {
-        return pressureInPsi * 68.9476;
-    } else if (strcmp(unit, "inH2O") == 0) {
-        return pressureInPsi * 27.6807;
-    } else {
-        return pressureInPsi; // Default to psi if unit is not recognized
+    switch (dunit) {
+        case bar:
+            return pressureInPsi * 0.0689476;
+        case mbar:
+            return pressureInPsi * 68.9476;
+        case inH2O:
+            return pressureInPsi * 27.6807;
+        case psi:
+        default:
+            return pressureInPsi; // Default to psi if unit is not recognized
     }
 }
 

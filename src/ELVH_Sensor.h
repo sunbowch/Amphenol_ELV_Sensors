@@ -7,6 +7,13 @@
 
 class ELVH_Sensor {
 public:
+    enum Unit {
+        psi,
+        bar,
+        mbar,
+        inH2O
+    };
+
     ELVH_Sensor(const char* model, uint8_t csPin); // Constructor for SPI
     ELVH_Sensor(const char* model); // Constructor for I2C
     void begin();
@@ -17,7 +24,7 @@ public:
     float getPressure();
     float getTemperature();
     void setSensorModel(const char* model);
-    void setDesiredUnit(const char* unit); // New method to set the desired unit
+    void setDesiredUnit(Unit unit); // New method to set the desired unit
     char sensorModel[20];
     void setCSPin(uint8_t csPin);
 
@@ -29,14 +36,15 @@ private:
     uint16_t pressure;
     uint16_t temperature;
     int status;
-    char unit[10]; // New member variable to store the desired unit
+    Unit unit;          //default unit of the sensor
+    Unit dunit;         //unit to display
     
     uint8_t csPin; // New member variable to store the CS pin
     uint8_t i2cAddress; // New member variable to store the I2C address
     bool isI2C; // New member variable to indicate if the sensor is I2C
     void readSPI(uint8_t bytesToRead);
     void readI2C(uint8_t bytesToRead); // Updated method declaration
-    void setPressureRangeAndTransferFunction(); // New method declaration
+    void setSensorParameters(); // New method declaration
     float convertPressure(uint16_t rawPressure);
     float convertTemperature(uint16_t rawTemperature);
     float convertToDesiredUnit(float pressure); // New method to convert pressure to the desired unit
