@@ -14,7 +14,7 @@ void setup() {
 
     for (int i = 0; i < NUM_SENSORS; i++) {
         sensors[i].begin(); // Initialize each sensor
-        sensors[i].setDesiredUnit("bar"); // Set desired unit for each sensor
+        sensors[i].setDesiredUnit(sensors[i].bar); // Set desired unit for each sensor
     }
 }
 

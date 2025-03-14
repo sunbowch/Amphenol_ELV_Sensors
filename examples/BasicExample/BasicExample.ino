@@ -6,7 +6,7 @@ ELVH_Sensor sensor("150G-HAND-C-PSA4", 5); // Initialize with model and CS pin
 void setup() {
     Serial.begin(115200);
     sensor.begin(); // Initialize the sensor
-    sensor.setDesiredUnit("bar"); // Set desired unit
+    sensor.setDesiredUnit(sensor.bar); // Set desired unit
 }
 
 void loop() {
