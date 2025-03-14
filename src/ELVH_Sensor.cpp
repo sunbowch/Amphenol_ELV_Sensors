@@ -45,10 +45,11 @@ void ELVH_Sensor::setSensorParameters() {
     char PPPP[6];
     char D;
     int fullScaleSpan=16384;
+    float pRef=0;
     int length = strchr(sensorModel, '-') - sensorModel;
     strncpy(PPPP, sensorModel, length);
     PPPP[length] = '\0';
-    D = sensorModel[length + 8];
+    D = sensorModel[length + 10];
     
     // Lookup table for pressure ranges (example values, replace with actual values)
     struct PressureRange {
@@ -101,7 +102,8 @@ void ELVH_Sensor::setSensorParameters() {
             Serial.println("Invalid sensor model");
         }
     }
-    if (maxPressure+minPressure == 0){              // differential sensors
+    if (maxPressure + minPressure == 0){   // differential sensors
+        pRef = 0;
         switch (D) {
             case 'A':
                 fullScaleSpan = 13108;
@@ -124,9 +126,10 @@ void ELVH_Sensor::setSensorParameters() {
                 fullScaleSpan = 16384; 
                 break;
         }
-
+        
     }
     else{
+        pRef = minPressure;
         switch (D) {
             case 'A':
                 pOffset = 1638;
@@ -151,6 +154,7 @@ void ELVH_Sensor::setSensorParameters() {
         }
     }
     pFactor = (maxPressure - minPressure) / fullScaleSpan;
+    minPressure = pRef;
 
     // Set default unit based on the first character of the sensor model
     switch (sensorModel[0]) {
