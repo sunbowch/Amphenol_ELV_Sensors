@@ -1,18 +1,77 @@
 #include "ELVH_Sensor.h"
 #include <Arduino.h>
+#include <Adafruit_MCP23X17.h>
+#include <SPI.h>
+#include <Wire.h>
+
+// File-local SPI initialization flag and setter (keeps SPI init tracking within this module)
+static volatile bool spiInitialized = false;
+static inline void setSPIInitializedLocal(bool initialized = true) { spiInitialized = initialized; }
+
+// Provide local aliases used below so file uses its local flag instead of a global symbol
+// Keep names different to avoid clashing with any global inline symbols.
+// Replace usage in this file: where 'setSPIInitialized' and 'spiInitialized' are used,
+// they will now resolve to local symbols by adding explicit calls below if necessary.
 
 // Constructor to initialize the sensor with a model and csPin for SPI
 ELVH_Sensor::ELVH_Sensor(const char* model, uint8_t csPin) {
     setSensorModel(model);
-    this->csPin = csPin;
+    // Use sentinel 255 to indicate no MCU CS assigned
+    this->csPin = (csPin == 0) ? 255 : csPin;  // avoid default 0
+    this->useMCP = false;
+    this->mcpPtr = nullptr;
 }
 
 // Constructor to initialize the sensor with a model for I2C
 ELVH_Sensor::ELVH_Sensor(const char* model) {
     setSensorModel(model);
+    this->csPin = 255; // sentinel: no CS assigned by default
+    this->useMCP = false;
+    this->mcpPtr = nullptr;
 }
 
-void ELVH_Sensor::begin() {
+// New method: configure MCP controller and MCP pin used as CS
+void ELVH_Sensor::setMCP(Adafruit_MCP23X17* mcp, uint8_t csPin) {
+    Serial.print("ELVH_Sensor::setMCP enter csPin="); Serial.println(csPin);
+    Serial.flush();
+    this->mcpPtr = mcp;
+    // Validate csPin for MCP range
+    if (csPin < 16 && mcpPtr != nullptr) {
+        this->useMCP = true;
+        this->csPin = csPin;
+        mcpPtr->pinMode(csPin, OUTPUT);
+        mcpPtr->digitalWrite(csPin, HIGH); // default deselected
+        Serial.print("ELVH_Sensor::setMCP ok csPin="); Serial.println(csPin);
+        Serial.flush();
+    } else {
+        // invalid MCP pin: fall back to MCU GPIO mode (user must call setCSPin if needed)
+        this->useMCP = false;
+        this->mcpPtr = nullptr;
+        Serial.print("ELVH_Sensor::setMCP invalid csPin="); Serial.println(csPin);
+        Serial.flush();
+    }
+    Serial.print("ELVH_Sensor::setMCP exit csPin="); Serial.println(csPin);
+    Serial.flush();
+}
+
+void ELVH_Sensor::setCSPin(uint8_t csPin) {
+    this->csPin = csPin;
+    this->useMCP = false;
+    this->mcpPtr = nullptr;
+    // Only configure MCU GPIO CS if it's not a reserved pin (0..10) and not sentinel (255)
+    if (csPin != 255 && csPin >= 11 && csPin <= 39) {
+        pinMode(csPin, OUTPUT);
+        digitalWrite(csPin, csActiveLow ? HIGH : LOW); // ensure deselected value
+    } else {
+        // Do not attempt to configure reserved pins or sentinel
+        Serial.print("setCSPin: skipping pinMode for csPin=");
+        Serial.println(csPin);
+    }
+    Serial.print("setCSPin: csPin="); Serial.print(csPin); Serial.print(", useMCP=");
+    Serial.println(useMCP ? "YES" : "NO");
+}
+
+void ELVH_Sensor::begin( uint8_t csPin) {
     setSensorParameters();
     if (isI2C) {
         beginI2C();
@@ -22,12 +81,35 @@ void ELVH_Sensor::begin() {
 }
 
 void ELVH_Sensor::beginSPI(uint8_t csPin) {
-    this->csPin = csPin; // Store the CS pin
+    Serial.print("ELVH_Sensor::beginSPI enter csPin="); Serial.println(csPin);
+    this->csPin = csPin == 0 ? 255 : csPin; // treat 0 as sentinel
     this->isI2C = false; // Indicate that this is not an I2C sensor
-    SPI.begin();
-    SPI.beginTransaction(SPISettings(800000, MSBFIRST, SPI_MODE0)); // Set SPI clock to 800 kHz
-    pinMode(csPin, OUTPUT);
-    digitalWrite(csPin, HIGH); // Ensure CS is high
+
+    // Ensure SPI.begin is called only once locally; if not called, auto-init (warn)
+    if (!spiInitialized) {
+        Serial.println("Warning: SPI not initialized globally; calling SPI.begin() with default pins.");
+        SPI.begin(); // default VSPI pins (or your chosen default)
+        SPI.beginTransaction(SPISettings(spiClock, MSBFIRST, SPI_MODE0));
+        setSPIInitializedLocal(true);
+        Serial.println("SPI.begin() (auto) done.");
+    }
+    delay(2);
+
+    // Configure only valid MCU pins (>=11), or MCP pins
+    if (!useMCP) {
+        if (this->csPin != 255 && this->csPin >= 11 && this->csPin <= 39) {
+            pinMode(this->csPin, OUTPUT);
+            digitalWrite(this->csPin, csActiveLow ? HIGH : LOW); // deactivate by default
+        } else {
+            Serial.print("beginSPI: not configuring MCU CS for pin "); Serial.println(this->csPin);
+        }
+    } else if (mcpPtr) {
+        mcpPtr->pinMode(this->csPin, OUTPUT);
+        mcpPtr->digitalWrite(this->csPin, csActiveLow ? HIGH : LOW);
+    }
+    Serial.print("ELVH_Sensor::beginSPI exit csPin="); Serial.println(csPin);
+    Serial.flush();
+    delay(2);
 }
 
 void ELVH_Sensor::beginI2C() {
@@ -41,16 +123,25 @@ void ELVH_Sensor::setSensorModel(const char* model) {
 }
 
 void ELVH_Sensor::setSensorParameters() {
-    // Extract PPPP(P) and D from sensorModel
-    char PPPP[6];
-    char D;
+    Serial.println("ELVH_Sensor::setSensorParameters enter");
+    Serial.flush();
+    // Extract PPPP (first token) safely and transfer function D from PPPP's last char
+    char PPPP[6] = {0};
+    char D = '\0';
     int fullScaleSpan=16384;
     float pRef=0;
-    int length = strchr(sensorModel, '-') - sensorModel;
+    const char* dash = strchr(sensorModel, '-');
+    int length = dash ? (dash - sensorModel) : (int)strlen(sensorModel);
+    if (length > (int)sizeof(PPPP)-1) length = sizeof(PPPP)-1;
     strncpy(PPPP, sensorModel, length);
     PPPP[length] = '\0';
-    D = sensorModel[length + 10];
-    
+
+    if (length > 0) {
+        D = PPPP[length-1];
+    } else {
+        D = '\0';
+    }
+
     // Lookup table for pressure ranges (example values, replace with actual values)
     struct PressureRange {
         const char* range;
@@ -88,6 +179,8 @@ void ELVH_Sensor::setSensorParameters() {
     };
     minPressure = 0.0;
     maxPressure = 16384.0;
+
+    bool found = false;
     for (const auto& range : pressureRanges) {
         if (strcmp(PPPP, range.range) == 0) {
             minPressure = range.min;
@@ -96,13 +189,18 @@ void ELVH_Sensor::setSensorParameters() {
             Serial.print(minPressure);
             Serial.print(" to ");
             Serial.println(maxPressure);
+            found = true;
             break;
         }
-        else {
-            Serial.println("Invalid sensor model");
-        }
     }
-    if (maxPressure + minPressure == 0){   // differential sensors
+    if (!found) {
+        Serial.print("Invalid sensor model: ");
+        Serial.println(sensorModel);
+    }
+    Serial.println("ELVH_Sensor::setSensorParameters exit");
+    Serial.flush();
+
+    if ((maxPressure + minPressure) == 0) { // differential sensors
         pRef = 0;
         switch (D) {
             case 'A':
@@ -123,12 +221,10 @@ void ELVH_Sensor::setSensorParameters() {
                 break;
             default:
                 pOffset = 8192;
-                fullScaleSpan = 16384; 
+                fullScaleSpan = 16384;
                 break;
         }
-        
-    }
-    else{
+    } else {
         pRef = minPressure;
         switch (D) {
             case 'A':
@@ -140,7 +236,7 @@ void ELVH_Sensor::setSensorParameters() {
                 fullScaleSpan = 14746;
                 break;
             case 'C':
-                pOffset = 819; 
+                pOffset = 819;
                 fullScaleSpan = 13107;
                 break;
             case 'D':
@@ -149,14 +245,14 @@ void ELVH_Sensor::setSensorParameters() {
                 break;
             default:
                 pOffset = 0;
-                fullScaleSpan = 16384; // Invalid transfer function
+                fullScaleSpan = 16384;
                 break;
         }
     }
     pFactor = (maxPressure - minPressure) / fullScaleSpan;
     minPressure = pRef;
 
-    // Set default unit based on the first character of the sensor model
+    // Default unit based on first char
     switch (sensorModel[0]) {
         case '0':
         case '1':
@@ -177,10 +273,13 @@ void ELVH_Sensor::setSensorParameters() {
             break;
     }
 
-    // Find the 3rd '-' separator
-    const char* thirdDash = strchr(strchr(strchr(sensorModel, '-') + 1, '-') + 1, '-');
+    // Find the 3rd '-' separator safely
+    const char* p = sensorModel;
+    const char* firstDash = strchr(p, '-');
+    const char* secondDash = firstDash ? strchr(firstDash + 1, '-') : nullptr;
+    const char* thirdDash = secondDash ? strchr(secondDash + 1, '-') : nullptr;
     if (thirdDash != nullptr && thirdDash[1] != '\0') {
-        char N = thirdDash[2]; // N is the 2nd character after the 3rd '-'
+        char N = thirdDash[2]; // first char after '-' then index 1/2 used earlier
         Serial.print("N: ");
         Serial.println(N);
         if (N == 'S') {
@@ -197,9 +296,10 @@ void ELVH_Sensor::setDesiredUnit(Unit unit) {
 }
 
 float ELVH_Sensor::convertToDesiredUnit(float pressure) {
+    // Convert input pressure (in sensor native 'unit') to psi, then to desired unit 'dunit'
     float pressureInPsi = pressure;
 
-    // Convert from the current unit to psi
+    // Convert from sensor 'unit' to psi
     switch (unit) {
         case bar:
             pressureInPsi = pressure / 0.0689476;
@@ -207,67 +307,231 @@ float ELVH_Sensor::convertToDesiredUnit(float pressure) {
         case mbar:
             pressureInPsi = pressure / 68.9476;
             break;
+        case ubar:
+            pressureInPsi = pressure / 6894.76;
+            break;
         case inH2O:
             pressureInPsi = pressure / 27.6807;
             break;
         case psi:
         default:
+            // Already in psi or unknown: leave unchanged
             break;
     }
 
-    // Convert from psi to the desired unit
+    // Convert from psi to desired unit 'dunit'
     switch (dunit) {
         case bar:
             return pressureInPsi * 0.0689476;
         case mbar:
             return pressureInPsi * 68.9476;
+        case ubar:
+            return pressureInPsi * 6894.76;
         case inH2O:
             return pressureInPsi * 27.6807;
         case psi:
         default:
             return pressureInPsi; // Default to psi if unit is not recognized
     }
+
+    // Fallback
+    return pressureInPsi;
 }
 
 void ELVH_Sensor::readSensorData(uint8_t bytesToRead) {
     if (isI2C) {
         readI2C(bytesToRead);
     } else {
-        digitalWrite(csPin, LOW); // Pull CS low to start communication
+        // Use MCP digital write if configured and valid, else MCU's digitalWrite:
+        if (useMCP && mcpPtr && csPin < 16) {
+            // Now assert this sensor's CS and give settle time
+            mcpPtr->digitalWrite(csPin, LOW);
+            // Wait for MCP output to reflect asserted state; use mcpPtr (not global mcp).
+            while (mcpPtr->digitalRead(csPin) != (csActiveLow ? LOW : HIGH)) {
+                yield();
+            }
+        } else if (csPin < 255) {
+            digitalWrite(csPin, LOW);
+            // Wait for MCU pin to reflect asserted state
+            while (digitalRead(csPin) != (csActiveLow ? LOW : HIGH)) {
+                yield();
+            }
+        } // else, no CS defined; proceed but may collide on bus
         readSPI(bytesToRead);
-        digitalWrite(csPin, HIGH); // Pull CS high to end communication
+
+        if (useMCP && mcpPtr && csPin < 16) {
+            mcpPtr->digitalWrite(csPin, HIGH);
+            delayMicroseconds(2); // increased
+        } else if (csPin < 255) {
+            digitalWrite(csPin, HIGH);
+            delayMicroseconds(2);
+        }
     }
 }
 
 void ELVH_Sensor::readI2C(uint8_t bytesToRead) {
-    Wire.beginTransmission(i2cAddress);
-    Wire.write(0x00); // Dummy write to initiate read
-    Wire.endTransmission(false); // Send repeated start
 
-    Wire.requestFrom(i2cAddress, bytesToRead); // Request bytesToRead bytes
+    const int MAX_RETRIES = 3;
+    int attempt;
+    int rc = -1;
+    int received = 0;
+    for (attempt = 0; attempt < MAX_RETRIES; ++attempt) {
+        Wire.beginTransmission(i2cAddress);
+        Wire.write(0x00); // Dummy write to initiate read
+        rc = Wire.endTransmission(false); // Send repeated start
+        if (rc != 0) {
+            //Serial.print("ELVH_Sensor::readI2C endTransmission rc=");
+            //Serial.println(rc);
+            delay(10);
+            continue;
+        }
 
-    if (Wire.available() >= 2) {
-        uint8_t msb = Wire.read();
-        uint8_t lsb = Wire.read();
-        status = (msb >> 6) & 0x03;
-        pressure = ((msb & 0x3F) << 8) | lsb;
+        // Request bytes and check how many were received
+        received = Wire.requestFrom((int)i2cAddress, (int)bytesToRead);
+        if (received == 0) {
+            //Serial.print("ELVH_Sensor::readI2C requestFrom returned 0, attempt ");
+            //Serial.println(attempt + 1);
+            delay(10);
+            continue;
+        }
+
+        // Now read bytes safely depending on how many arrived
+        if (received >= 2 && Wire.available() >= 2) {
+            uint8_t msb = Wire.read();
+            uint8_t lsb = Wire.read();
+            status = (msb >> 6) & 0x03;
+            pressure = ((msb & 0x3F) << 8) | lsb;
+        } else {
+            // Not enough data to determine pressure; mark as error and retry
+            status = 0xFF;
+            pressure = 0;
+            temperature = 0;
+            if (received < 2) {
+                Serial.println("ELVH_Sensor::readI2C not enough data for status+pressure");
+                delay(10);
+                continue;
+            }
+        }
+
+        // Read temperature if present
+        if (bytesToRead >= 3 && received >= 3 && Wire.available() >= 1) {
+            uint8_t msb = Wire.read();
+            temperature = msb << 3;
+        } else if (bytesToRead >= 3) {
+            // missing byte(s)
+            Serial.println("ELVH_Sensor::readI2C missing MSB temperature");
+        }
+
+        if (bytesToRead == 4 && received >= 4 && Wire.available() >= 1) {
+            uint8_t lsb = Wire.read();
+            temperature |= (lsb >> 5) & 0x07;
+        } else if (bytesToRead == 4) {
+            Serial.println("ELVH_Sensor::readI2C missing LSB temperature");
+        }
+
+        // Success path
+        break;
     }
 
-    if (bytesToRead >= 3 && Wire.available() >= 1) {
-        uint8_t msb = Wire.read();
-        temperature = msb << 3;
+    if (attempt == MAX_RETRIES) {
+        // we failed all attempts; mark as error
+        status = 0xFF;
+        pressure = 0;
+        temperature = 0;
+        Serial.print("ELVH_Sensor::readI2C FAILED after ");
+        Serial.print(MAX_RETRIES);
+        Serial.print(" attempts, final rc=");
+        Serial.print(rc);
+        Serial.print(", received=");
+        Serial.println(received);
+    } else {
+        // Debug print parsed values if successful
+        //Serial.print("ELVH_Sensor::readI2C success status=0x");
+        //Serial.print(status, HEX);
+        //Serial.print(" pressure=");
+        //Serial.print(pressure);
+        //Serial.print(" temperature_raw=");
+        //Serial.println(temperature);
     }
-
-    if (bytesToRead == 4 && Wire.available() >= 1) {
-        uint8_t lsb = Wire.read();
-        temperature |= (lsb >> 5) & 0x07;
-    }
-
-    Wire.endTransmission();
 }
 
+// Global wrapper: exposes a function that other modules can call to mark SPI as initialized.
+// For safety we forward to the file-local setter; keep variable module-local.
+void ELVH_Sensor::setSPIInitialized(bool initialized /* = true */) {
+    setSPIInitializedLocal(initialized);
+}
+
+// Allow per-sensor SPI clock tuning
+void ELVH_Sensor::setSPIClock(uint32_t hz) {
+    if (hz < 100000) hz = 100000;
+    if (hz > 800000) hz = 800000;
+    spiClock = hz;
+    Serial.print("ELVH_Sensor::setSPIClock set to "); Serial.println(spiClock);
+}
+
+// Set CS polarity (activeLow true => assert with LOW)
+void ELVH_Sensor::setCSActiveLow(bool activeLow) {
+    csActiveLow = activeLow;
+}
+
+// Return CS polarity
+bool ELVH_Sensor::getCSActiveLow() const {
+    return csActiveLow;
+}
+
+// CS helpers that toggle the CS for this sensor
+void ELVH_Sensor::assertCS() {
+    if (useMCP && mcpPtr && csPin < 16 && csPin >= 0) {
+        mcpPtr->digitalWrite(csPin, csActiveLow ? LOW : HIGH);
+    } else if (csPin != 255 && csPin >= 11 && csPin <= 39) {
+        digitalWrite(csPin, csActiveLow ? LOW : HIGH);
+    } else {
+        // invalid CS (sentinel or reserved MCU) - do not touch; optionally log
+        Serial.print("assertCS: skipping assertCS for csPin="); Serial.println(csPin);
+    }
+}
+
+void ELVH_Sensor::deassertCS() {
+    if (useMCP && mcpPtr && csPin < 16 && csPin >= 0) {
+        mcpPtr->digitalWrite(csPin, csActiveLow ? HIGH : LOW);
+    } else if (csPin != 255 && csPin >= 11 && csPin <= 39) {
+        digitalWrite(csPin, csActiveLow ? HIGH : LOW);
+    } else {
+        // invalid CS (sentinel or reserved MCU) - do not touch; optionally log
+        Serial.print("deassertCS: skipping deassertCS for csPin="); Serial.println(csPin);
+    }
+}
+
+void ELVH_Sensor::deselectCS() {
+    deassertCS();
+}
+
+// New rawSPIRead uses assertCS/deassertCS
+bool ELVH_Sensor::rawSPIRead(uint8_t bytesToRead, uint8_t* buffer) {
+    if (bytesToRead == 0 || buffer == nullptr) return false;
+    if (!( (useMCP && mcpPtr && csPin < 16) || (csPin < 255) )) {
+        Serial.println("rawSPIRead: no valid CS defined");
+        return false;
+    }
+
+    assertCS();
+    delayMicroseconds(50); // allow MCP output to settle 
+
+    SPI.beginTransaction(SPISettings(spiClock, MSBFIRST, SPI_MODE0));
+    for (int i = 0; i < bytesToRead; ++i) {
+        buffer[i] = SPI.transfer(0x00);
+    }
+    SPI.endTransaction();
+
+    delayMicroseconds(50); // small settle time
+    deassertCS();
+
+    return true;
+}
+
+// readSPI: use assert/deassert and keep delay settle
 void ELVH_Sensor::readSPI(uint8_t bytesToRead) {
-    uint32_t response = 0;
+   uint32_t response = 0;
     for (int i = 0; i < bytesToRead; i++) {
         response <<= 8;
         response |= SPI.transfer(0x00); // Send dummy byte to receive data
@@ -291,16 +555,16 @@ void ELVH_Sensor::readSPI(uint8_t bytesToRead) {
         temperature = 0;
     }
 
-    Serial.print("Status: ");
-    Serial.println(status, BIN);
+    //Serial.print("Status: ");
+    //Serial.println(status, BIN);
     switch (status) {
         case 0b00:
-            Serial.println("No error");
-            Serial.print("Pressure: ");
-            Serial.println(convertToDesiredUnit(convertPressure(pressure)));
+            //Serial.println("No error");
+            //Serial.print("Pressure: ");
+            //Serial.println(convertToDesiredUnit(convertPressure(pressure)));
             if (bytesToRead >= 3) {
-                Serial.print("Temperature: ");
-                Serial.println(convertTemperature(temperature));
+                //Serial.print("Temperature: ");
+                //Serial.println(convertTemperature(temperature));
             }
             break;
         case 0b10:
@@ -336,7 +600,7 @@ float ELVH_Sensor::getTemperature() {
 int ELVH_Sensor::getStatus() {
     switch (status) {
         case 0b00:
-            Serial.println("Ready");
+            //Serial.println("Ready");
             break;
         case 0b10:
             Serial.println("No new data since last read");
@@ -351,9 +615,34 @@ int ELVH_Sensor::getStatus() {
     return status;
 }
 
-// Method to set the CS pin to another value
-void ELVH_Sensor::setCSPin(uint8_t csPin) {
-    this->csPin = csPin;
-    pinMode(csPin, OUTPUT);
-    digitalWrite(csPin, HIGH); // Ensure CS is high
+// New: override the I2C address at runtime (used for diagnostics or non-standard mapping)
+void ELVH_Sensor::setI2CAddress(uint8_t addr) {
+    i2cAddress = addr;
+    isI2C = true;
+    Serial.print("ELVH_Sensor::setI2CAddress set to 0x");
+    Serial.println(i2cAddress, HEX);
+}
+
+// New: override I2C mode explicitly (force SPI when false)
+void ELVH_Sensor::setI2CMode(bool mode) {
+    isI2C = mode;
+    Serial.print("ELVH_Sensor::setI2CMode set to ");
+    Serial.println(isI2C ? "I2C" : "SPI");
+}
+
+// Add simple const getters to expose internal state safely
+bool ELVH_Sensor::isI2CMode() const {
+    return isI2C;
+}
+
+uint8_t ELVH_Sensor::getI2CAddress() const {
+    return i2cAddress;
+}
+
+uint8_t ELVH_Sensor::getCSPin() const {
+    return csPin;
+}
+
+const char* ELVH_Sensor::getModel() const {
+    return sensorModel;
 }

@@ -5,18 +5,22 @@
 #include <SPI.h>
 #include <Wire.h>
 
+// Forward declaration for Adafruit MCP library to avoid an unnecessary heavy include
+class Adafruit_MCP23X17;
+
 class ELVH_Sensor {
 public:
     enum Unit {
         psi,
         bar,
         mbar,
+        ubar,
         inH2O
     };
 
     ELVH_Sensor(const char* model, uint8_t csPin); // Constructor for SPI
     ELVH_Sensor(const char* model); // Constructor for I2C
-    void begin();
+    void begin(uint8_t csPin);
     void beginSPI(uint8_t csPin = SS); // Default to hardware CS pin if no csPin is defined
     void beginI2C();
     void readSensorData(uint8_t bytesToRead = 4);
@@ -27,6 +31,32 @@ public:
     void setDesiredUnit(Unit unit); // New method to set the desired unit
     char sensorModel[20];
     void setCSPin(uint8_t csPin);
+    void setMCP(Adafruit_MCP23X17* mcp, uint8_t csPin); // New API to use MCP23X17 expander
+
+    // Force bus mode and runtime configuration
+    void setI2CMode(bool mode);
+    void setI2CAddress(uint8_t addr);
+
+    // SPI helpers
+    void setSPIClock(uint32_t hz);
+    bool rawSPIRead(uint8_t bytesToRead, uint8_t* buffer);
+
+    // CS polarity control (true = active LOW; default true)
+    void setCSActiveLow(bool activeLow);
+    bool getCSActiveLow() const;
+    // Public deassert so other modules can deselect a sensor safely
+    void deselectCS();
+
+    // State accessors
+    bool isI2CMode() const;
+    uint8_t getI2CAddress() const;
+    uint8_t getCSPin() const;
+
+    // Allow test code or other modules to mark SPI initialized for this library.
+    static void setSPIInitialized(bool initialized);
+
+    // Expose model for higher level code to report or populate metadata arrays
+    const char* getModel() const;
 
 private:
     float minPressure;
@@ -42,12 +72,19 @@ private:
     uint8_t csPin; // New member variable to store the CS pin
     uint8_t i2cAddress; // New member variable to store the I2C address
     bool isI2C; // New member variable to indicate if the sensor is I2C
+    bool useMCP = false; // New member to support MCP-controlled CS
+    Adafruit_MCP23X17* mcpPtr = nullptr; // Pointer for MCP instance
     void readSPI(uint8_t bytesToRead);
     void readI2C(uint8_t bytesToRead); // Updated method declaration
     void setSensorParameters(); // New method declaration
     float convertPressure(uint16_t rawPressure);
     float convertTemperature(uint16_t rawTemperature);
     float convertToDesiredUnit(float pressure); // New method to convert pressure to the desired unit
+    uint32_t spiClock = 800000; // default per-sensor SPI clock in Hz
+    bool csActiveLow = true; // default active low
+    // CS helpers that toggle the CS for this sensor
+    void assertCS();
+    void deassertCS();
 };
 
 #endif // ELVH_SENSOR_H
