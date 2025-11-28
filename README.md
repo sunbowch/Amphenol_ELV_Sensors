@@ -34,6 +34,42 @@ lib_deps =
 
 ## Usage
 
+### How It Works
+
+The library uses a two-step process to read sensor data:
+
+1. **`readSensorData()`** - Initiates communication over SPI or I2C and retrieves raw data from the sensor. This function performs the actual bus transaction and stores the values internally.
+2. **Getter functions** (`getPressure()`, `getTemperature()`, `getStatus()`) - Return the processed values from the last read operation.
+
+This design pattern allows you to:
+- Read sensor data once per cycle, minimizing bus traffic
+- Access the same reading multiple times without re-querying the sensor
+- Check status before using pressure/temperature values
+- Optimize timing-critical applications
+
+**Important:** Always call `readSensorData()` before using any getter functions to ensure you're working with current values.
+
+### Understanding bytesToRead Parameter
+
+The `readSensorData(bytesToRead)` function accepts a parameter that determines how much data is read from the sensor:
+
+- **`readSensorData(2)`** - Reads 2 bytes
+  - Status (2 bits)
+  - Pressure (14 bits)
+  - Temperature data: **Not available** (returns 0)
+
+- **`readSensorData(3)`** - Reads 3 bytes
+  - Status (2 bits)
+  - Pressure (14 bits)
+  - Temperature MSB only (8 bits) - **Reduced accuracy**
+
+- **`readSensorData(4)`** - Reads 4 bytes (default, recommended)
+  - Status (2 bits)
+  - Pressure (14 bits)
+  - Temperature (11 bits) - **Full accuracy**
+
+**Recommendation:** Use `readSensorData(4)` for most applications to get complete pressure and temperature data. Use fewer bytes only when temperature is not needed or to optimize communication speed.
+
 ### Basic SPI Example
 ```cpp
 #include <Arduino.h>
@@ -78,6 +114,44 @@ void loop() {
 }
 ```
 
+### Reading Data Efficiently
+
+```cpp
+void loop() {
+    // Step 1: Trigger the data bus transaction
+    sensor.readSensorData(4); // Reads 4 bytes: status, pressure, and temperature
+    
+    // Step 2: Check status before using values
+    int status = sensor.getStatus();
+    if (status == 0b00) { // No error
+        // Step 3: Use getter functions to access the stored values
+        Serial.print("Pressure: ");
+        Serial.println(sensor.getPressure());
+        Serial.print("Temperature: ");
+        Serial.println(sensor.getTemperature());
+    }
+    
+    delay(1000);
+}
+```
+
+### Reading Pressure Only (Faster)
+
+```cpp
+void loop() {
+    // Read only 2 bytes for faster communication
+    sensor.readSensorData(2); // Status + Pressure only
+    
+    if (sensor.getStatus() == 0b00) {
+        Serial.print("Pressure: ");
+        Serial.println(sensor.getPressure());
+        // getTemperature() would return 0
+    }
+    
+    delay(100);
+}
+```
+
 ## API Reference
 
 ### Constructor
@@ -86,11 +160,18 @@ void loop() {
 
 ### Methods
 - `begin()` - Initialize the sensor
-- `readSensorData(uint8_t bytesToRead = 4)` - Read sensor data
-- `getPressure()` - Get pressure in the desired unit
-- `getTemperature()` - Get temperature in Celsius
-- `getStatus()` - Get sensor status
+- `readSensorData(uint8_t bytesToRead = 4)` - **Trigger bus transaction** and read sensor data (2, 3, or 4 bytes)
+- `getPressure()` - Get pressure in the desired unit from last read
+- `getTemperature()` - Get temperature in Celsius from last read
+- `getStatus()` - Get sensor status from last read
 - `setDesiredUnit(Unit unit)` - Set output pressure unit
+- `isBelow(float limit)` - Returns true if pressure is below the specified limit
+- `isAbove(float limit)` - Returns true if pressure is above the specified limit
+
+### Status Codes
+- `0b00` - Normal operation, data valid
+- `0b10` - No new data since last read
+- `0b11` - Diagnostic condition (error)
 
 ### Units
 - `ELVH_Sensor::psi`

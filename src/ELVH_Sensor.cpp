@@ -506,29 +506,6 @@ void ELVH_Sensor::deselectCS() {
     deassertCS();
 }
 
-// New rawSPIRead uses assertCS/deassertCS
-bool ELVH_Sensor::rawSPIRead(uint8_t bytesToRead, uint8_t* buffer) {
-    if (bytesToRead == 0 || buffer == nullptr) return false;
-    if (!( (useMCP && mcpPtr && csPin < 16) || (csPin < 255) )) {
-        Serial.println("rawSPIRead: no valid CS defined");
-        return false;
-    }
-
-    assertCS();
-    delayMicroseconds(50); // allow MCP output to settle 
-
-    SPI.beginTransaction(SPISettings(spiClock, MSBFIRST, SPI_MODE0));
-    for (int i = 0; i < bytesToRead; ++i) {
-        buffer[i] = SPI.transfer(0x00);
-    }
-    SPI.endTransaction();
-
-    delayMicroseconds(50); // small settle time
-    deassertCS();
-
-    return true;
-}
-
 // readSPI: use assert/deassert and keep delay settle
 void ELVH_Sensor::readSPI(uint8_t bytesToRead) {
    uint32_t response = 0;
@@ -595,6 +572,20 @@ float ELVH_Sensor::getPressure() {
 
 float ELVH_Sensor::getTemperature() {
     return convertTemperature(temperature);
+}
+
+bool ELVH_Sensor::isBelow(float limit) {
+    return getPressure() < limit;
+}
+
+bool ELVH_Sensor::isAbove(float limit) {
+    return getPressure() > limit;
+}
+
+bool ELVH_Sensor::isBetween(float low, float high) {
+    if (low > high) { float t = low; low = high; high = t; } // normalize bounds
+    float p = getPressure();
+    return p >= low && p <= high; // inclusive
 }
 
 int ELVH_Sensor::getStatus() {

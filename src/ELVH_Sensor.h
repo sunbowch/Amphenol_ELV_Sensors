@@ -27,6 +27,9 @@ public:
     int getStatus();
     float getPressure();
     float getTemperature();
+    bool isBelow(float limit);
+    bool isAbove(float limit);
+    bool isBetween(float low, float high);
     void setSensorModel(const char* model);
     void setDesiredUnit(Unit unit); // New method to set the desired unit
     char sensorModel[20];
@@ -39,7 +42,6 @@ public:
 
     // SPI helpers
     void setSPIClock(uint32_t hz);
-    bool rawSPIRead(uint8_t bytesToRead, uint8_t* buffer);
 
     // CS polarity control (true = active LOW; default true)
     void setCSActiveLow(bool activeLow);
