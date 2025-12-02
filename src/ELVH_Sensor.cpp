@@ -300,9 +300,9 @@ void ELVH_Sensor::setDesiredUnit(Unit unit, PressureReference reference) {
     pressureRef = reference;
 }
 
-void ELVH_Sensor::setZeroOffset(uint16_t rawOffset) {
+void ELVH_Sensor::setZeroOffsetRaw(uint16_t rawOffset) {
     zeroOffset = rawOffset;
-    Serial.print("ELVH_Sensor::setZeroOffset set to raw value: ");
+    Serial.print("ELVH_Sensor::setZeroOffsetRaw set to raw value: ");
     Serial.println(zeroOffset);
 }
 

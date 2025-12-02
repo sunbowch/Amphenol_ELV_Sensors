@@ -37,7 +37,7 @@ public:
     bool isBetween(float low, float high);
     void setSensorModel(const char* model);
     void setDesiredUnit(Unit unit, PressureReference reference = absolute); // Updated with reference mode
-    void setZeroOffset(uint16_t rawOffset); // Changed to raw sensor value
+    void setZeroOffsetRaw(uint16_t rawOffset); // renamed from setZeroOffset(uint16_t)
     void setZeroOffset(float offsetInDesiredUnit); // NEW: set offset using desired units
     uint16_t getZeroOffset() const; // Changed to return raw value
     float getZeroOffsetInUnit() const;             // NEW: get offset in desired units
