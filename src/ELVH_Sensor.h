@@ -18,6 +18,11 @@ public:
         inH2O
     };
 
+    enum PressureReference {
+        gauge = 0,
+        absolute = 1
+    };
+
     ELVH_Sensor(const char* model, uint8_t csPin); // Constructor for SPI
     ELVH_Sensor(const char* model); // Constructor for I2C
     void begin(uint8_t csPin);
@@ -31,7 +36,12 @@ public:
     bool isAbove(float limit);
     bool isBetween(float low, float high);
     void setSensorModel(const char* model);
-    void setDesiredUnit(Unit unit); // New method to set the desired unit
+    void setDesiredUnit(Unit unit, PressureReference reference = absolute); // Updated with reference mode
+    void setZeroOffset(uint16_t rawOffset); // Changed to raw sensor value
+    void setZeroOffset(float offsetInDesiredUnit); // NEW: set offset using desired units
+    uint16_t getZeroOffset() const; // Changed to return raw value
+    float getZeroOffsetInUnit() const;             // NEW: get offset in desired units
+    void measureZeroOffset(); // New method to measure and set zero offset from current reading
     char sensorModel[20];
     void setCSPin(uint8_t csPin);
     void setMCP(Adafruit_MCP23X17* mcp, uint8_t csPin); // New API to use MCP23X17 expander
@@ -70,6 +80,8 @@ private:
     int status;
     Unit unit;          //default unit of the sensor
     Unit dunit;         //unit to display
+    PressureReference pressureRef; // New member for pressure reference mode
+    uint16_t zeroOffset;   // Changed to raw unitless sensor value
     
     uint8_t csPin; // New member variable to store the CS pin
     uint8_t i2cAddress; // New member variable to store the I2C address
@@ -87,6 +99,10 @@ private:
     // CS helpers that toggle the CS for this sensor
     void assertCS();
     void deassertCS();
+
+    // Centralized unit conversion helpers
+    static float unitToPsi(Unit u, float value);
+    static float psiToUnit(Unit u, float value);
 };
 
 #endif // ELVH_SENSOR_H

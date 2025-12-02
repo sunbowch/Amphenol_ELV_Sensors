@@ -164,9 +164,14 @@ void loop() {
 - `getPressure()` - Get pressure in the desired unit from last read
 - `getTemperature()` - Get temperature in Celsius from last read
 - `getStatus()` - Get sensor status from last read
-- `setDesiredUnit(Unit unit)` - Set output pressure unit
+- `setDesiredUnit(Unit unit, PressureReference reference = absolute)` - Set output pressure unit and reference mode
+- `setZeroOffset(uint16_t rawOffset)` - Set zero offset using raw sensor value (unitless)
+- `getZeroOffset()` - Get current zero offset as raw sensor value
+- `measureZeroOffset()` - Measure and set zero offset from current sensor reading
 - `isBelow(float limit)` - Returns true if pressure is below the specified limit
 - `isAbove(float limit)` - Returns true if pressure is above the specified limit
+- `isBetween(float low, float high)` - Returns true if pressure is between the specified limits
+
 
 ### Status Codes
 - `0b00` - Normal operation, data valid
@@ -178,6 +183,42 @@ void loop() {
 - `ELVH_Sensor::bar`
 - `ELVH_Sensor::mbar`
 - `ELVH_Sensor::inH2O`
+
+### Pressure Reference Modes
+- `ELVH_Sensor::absolute` - Absolute pressure (default)
+- `ELVH_Sensor::gauge` - Gauge pressure (relative to zero offset)
+
+### Using Gauge Pressure
+
+To configure a sensor for gauge pressure readings:
+
+```cpp
+void setup() {
+    Serial.begin(115200);
+    sensor.begin();
+    
+    // Read current pressure (should be at atmospheric/reference condition)
+    sensor.readSensorData(4);
+    
+    // Measure and set zero offset automatically
+    sensor.measureZeroOffset();
+    
+    // Set to gauge mode with bar units
+    sensor.setDesiredUnit(ELVH_Sensor::bar, ELVH_Sensor::gauge);
+}
+
+void loop() {
+    sensor.readSensorData(4);
+    
+    // Now getPressure() returns gauge pressure (relative to zero offset)
+    Serial.print("Gauge Pressure: ");
+    Serial.println(sensor.getPressure());
+    
+    delay(1000);
+}
+```
+
+**Note:** The zero offset is stored as a raw sensor value (unitless), so it remains valid even if you change the output unit later.
 
 ## Documentation
 

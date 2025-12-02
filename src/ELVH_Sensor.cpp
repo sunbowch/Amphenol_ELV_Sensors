@@ -20,6 +20,8 @@ ELVH_Sensor::ELVH_Sensor(const char* model, uint8_t csPin) {
     this->csPin = (csPin == 0) ? 255 : csPin;  // avoid default 0
     this->useMCP = false;
     this->mcpPtr = nullptr;
+    this->zeroOffset = 0; // Initialize zero offset (raw value)
+    this->pressureRef = absolute; // Default to absolute
 }
 
 // Constructor to initialize the sensor with a model for I2C
@@ -28,6 +30,8 @@ ELVH_Sensor::ELVH_Sensor(const char* model) {
     this->csPin = 255; // sentinel: no CS assigned by default
     this->useMCP = false;
     this->mcpPtr = nullptr;
+    this->zeroOffset = 0; // Initialize zero offset (raw value)
+    this->pressureRef = absolute; // Default to absolute
 }
 
 // New method: configure MCP controller and MCP pin used as CS
@@ -291,51 +295,81 @@ void ELVH_Sensor::setSensorParameters() {
     }
 }
 
-void ELVH_Sensor::setDesiredUnit(Unit unit) {
+void ELVH_Sensor::setDesiredUnit(Unit unit, PressureReference reference) {
     dunit = unit;
+    pressureRef = reference;
+}
+
+void ELVH_Sensor::setZeroOffset(uint16_t rawOffset) {
+    zeroOffset = rawOffset;
+    Serial.print("ELVH_Sensor::setZeroOffset set to raw value: ");
+    Serial.println(zeroOffset);
+}
+
+uint16_t ELVH_Sensor::getZeroOffset() const {
+    return zeroOffset;
+}
+
+// Centralized unit conversion helpers
+float ELVH_Sensor::unitToPsi(Unit u, float value) {
+    switch (u) {
+        case bar:   return value / 0.0689476f;
+        case mbar:  return value / 68.9476f;
+        case ubar:  return value / 6894.76f;
+        case inH2O: return value / 27.6807f;
+        case psi:
+        default:    return value;
+    }
+}
+
+float ELVH_Sensor::psiToUnit(Unit u, float valuePsi) {
+    switch (u) {
+        case bar:   return valuePsi * 0.0689476f;
+        case mbar:  return valuePsi * 68.9476f;
+        case ubar:  return valuePsi * 6894.76f;
+        case inH2O: return valuePsi * 27.6807f;
+        case psi:
+        default:    return valuePsi;
+    }
+}
+
+// Set zero offset using value provided in desired unit (dunit). Converts to raw sensor offset.
+void ELVH_Sensor::setZeroOffset(float offsetInDesiredUnit) {
+    // desired unit -> psi
+    float offsetPsi = unitToPsi(dunit, offsetInDesiredUnit);
+    // psi -> sensor native
+    float native = psiToUnit(unit, offsetPsi);
+    // native -> raw using inverse transfer function
+    float rawF = (native - minPressure) / pFactor + pOffset;
+    if (rawF < 0) rawF = 0;
+    if (rawF > 65535.0f) rawF = 65535.0f;
+    zeroOffset = static_cast<uint16_t>(rawF);
+
+    Serial.print("setZeroOffset: ");
+    Serial.print(offsetInDesiredUnit);
+    Serial.print(" => raw=");
+    Serial.println(zeroOffset);
+}
+
+// Return zero offset converted to current desired unit
+float ELVH_Sensor::getZeroOffsetInUnit() const {
+    float native = minPressure + (static_cast<float>(zeroOffset) - pOffset) * pFactor;
+    // native -> psi -> desired unit
+    float psi = unitToPsi(unit, native);
+    return psiToUnit(dunit, psi);
+}
+
+void ELVH_Sensor::measureZeroOffset() {
+    // Use current raw pressure reading as zero offset
+    zeroOffset = pressure;
+    Serial.print("ELVH_Sensor::measureZeroOffset measured and set to: ");
+    Serial.println(zeroOffset);
 }
 
 float ELVH_Sensor::convertToDesiredUnit(float pressure) {
-    // Convert input pressure (in sensor native 'unit') to psi, then to desired unit 'dunit'
-    float pressureInPsi = pressure;
-
-    // Convert from sensor 'unit' to psi
-    switch (unit) {
-        case bar:
-            pressureInPsi = pressure / 0.0689476;
-            break;
-        case mbar:
-            pressureInPsi = pressure / 68.9476;
-            break;
-        case ubar:
-            pressureInPsi = pressure / 6894.76;
-            break;
-        case inH2O:
-            pressureInPsi = pressure / 27.6807;
-            break;
-        case psi:
-        default:
-            // Already in psi or unknown: leave unchanged
-            break;
-    }
-
-    // Convert from psi to desired unit 'dunit'
-    switch (dunit) {
-        case bar:
-            return pressureInPsi * 0.0689476;
-        case mbar:
-            return pressureInPsi * 68.9476;
-        case ubar:
-            return pressureInPsi * 6894.76;
-        case inH2O:
-            return pressureInPsi * 27.6807;
-        case psi:
-        default:
-            return pressureInPsi; // Default to psi if unit is not recognized
-    }
-
-    // Fallback
-    return pressureInPsi;
+    // Convert input from sensor native unit to psi, then to desired unit
+    float pressureInPsi = unitToPsi(unit, pressure);
+    return psiToUnit(dunit, pressureInPsi);
 }
 
 void ELVH_Sensor::readSensorData(uint8_t bytesToRead) {
@@ -557,8 +591,14 @@ void ELVH_Sensor::readSPI(uint8_t bytesToRead) {
 }
 
 float ELVH_Sensor::convertPressure(uint16_t rawPressure) {
+    // Apply zero offset for gauge mode at the raw level
+    uint16_t adjustedPressure = rawPressure;
+    if (pressureRef == gauge) {
+        adjustedPressure = rawPressure - zeroOffset;
+    }
+    
     // Calculate the pressure based on the transfer function
-    float pressure = minPressure + (rawPressure - pOffset) * pFactor;
+    float pressure = minPressure + (adjustedPressure - pOffset) * pFactor;
     return pressure;
 }
 
