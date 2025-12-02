@@ -300,13 +300,14 @@ void ELVH_Sensor::setDesiredUnit(Unit unit, PressureReference reference) {
     pressureRef = reference;
 }
 
+// Private: set raw zero offset
 void ELVH_Sensor::setZeroOffsetRaw(uint16_t rawOffset) {
     zeroOffset = rawOffset;
-    Serial.print("ELVH_Sensor::setZeroOffsetRaw set to raw value: ");
-    Serial.println(zeroOffset);
+    Serial.print("ELVH_Sensor::setZeroOffsetRaw raw="); Serial.println(zeroOffset);
 }
 
-uint16_t ELVH_Sensor::getZeroOffset() const {
+// Private: get raw zero offset
+uint16_t ELVH_Sensor::getZeroOffsetRaw() const {
     return zeroOffset;
 }
 
@@ -333,37 +334,35 @@ float ELVH_Sensor::psiToUnit(Unit u, float valuePsi) {
     }
 }
 
-// Set zero offset using value provided in desired unit (dunit). Converts to raw sensor offset.
+// Public: set zero offset using desired unit value
 void ELVH_Sensor::setZeroOffset(float offsetInDesiredUnit) {
     // desired unit -> psi
     float offsetPsi = unitToPsi(dunit, offsetInDesiredUnit);
-    // psi -> sensor native
+    // psi -> sensor native unit
     float native = psiToUnit(unit, offsetPsi);
     // native -> raw using inverse transfer function
     float rawF = (native - minPressure) / pFactor + pOffset;
     if (rawF < 0) rawF = 0;
     if (rawF > 65535.0f) rawF = 65535.0f;
-    zeroOffset = static_cast<uint16_t>(rawF);
+    setZeroOffsetRaw(static_cast<uint16_t>(rawF));
 
-    Serial.print("setZeroOffset: ");
-    Serial.print(offsetInDesiredUnit);
-    Serial.print(" => raw=");
-    Serial.println(zeroOffset);
+    Serial.print("ELVH_Sensor::setZeroOffset desired="); Serial.print(offsetInDesiredUnit);
+    Serial.print(" -> raw="); Serial.println(getZeroOffsetRaw());
 }
 
-// Return zero offset converted to current desired unit
-float ELVH_Sensor::getZeroOffsetInUnit() const {
-    float native = minPressure + (static_cast<float>(zeroOffset) - pOffset) * pFactor;
-    // native -> psi -> desired unit
-    float psi = unitToPsi(unit, native);
-    return psiToUnit(dunit, psi);
+// Public: get zero offset in desired unit
+float ELVH_Sensor::getZeroOffset() const {
+    // raw -> native pressure
+    float native = minPressure + (static_cast<float>(getZeroOffsetRaw()) - pOffset) * pFactor;
+    // native -> desired unit
+    float psiVal = unitToPsi(unit, native);
+    return psiToUnit(dunit, psiVal);
 }
 
 void ELVH_Sensor::measureZeroOffset() {
-    // Use current raw pressure reading as zero offset
-    zeroOffset = pressure;
-    Serial.print("ELVH_Sensor::measureZeroOffset measured and set to: ");
-    Serial.println(zeroOffset);
+    readSensorData(2); // read pressure only
+    setZeroOffsetRaw(pressure);
+    Serial.print("ELVH_Sensor::measureZeroOffset raw="); Serial.println(getZeroOffsetRaw());
 }
 
 float ELVH_Sensor::convertToDesiredUnit(float pressure) {

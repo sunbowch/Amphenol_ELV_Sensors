@@ -37,10 +37,9 @@ public:
     bool isBetween(float low, float high);
     void setSensorModel(const char* model);
     void setDesiredUnit(Unit unit, PressureReference reference = absolute); // Updated with reference mode
-    void setZeroOffsetRaw(uint16_t rawOffset); // renamed from setZeroOffset(uint16_t)
+    // Public APIs in desired unit:
     void setZeroOffset(float offsetInDesiredUnit); // NEW: set offset using desired units
-    uint16_t getZeroOffset() const; // Changed to return raw value
-    float getZeroOffsetInUnit() const;             // NEW: get offset in desired units
+    float getZeroOffset() const; // returns offset in desired unit
     void measureZeroOffset(); // New method to measure and set zero offset from current reading
     char sensorModel[20];
     void setCSPin(uint8_t csPin);
@@ -99,6 +98,10 @@ private:
     // CS helpers that toggle the CS for this sensor
     void assertCS();
     void deassertCS();
+
+    // Raw offset storage and low-level helpers (unitless raw code)
+    void setZeroOffsetRaw(uint16_t rawOffset);
+    uint16_t getZeroOffsetRaw() const;
 
     // Centralized unit conversion helpers
     static float unitToPsi(Unit u, float value);

@@ -165,13 +165,15 @@ void loop() {
 - `getTemperature()` - Get temperature in Celsius from last read
 - `getStatus()` - Get sensor status from last read
 - `setDesiredUnit(Unit unit, PressureReference reference = absolute)` - Set output pressure unit and reference mode
-- `setZeroOffset(uint16_t rawOffset)` - Set zero offset using raw sensor value (unitless)
-- `getZeroOffset()` - Get current zero offset as raw sensor value
+- `setZeroOffset(float offsetInDesiredUnit)` - Set zero offset using value in desired unit
+- `getZeroOffset()` - Get current zero offset in desired unit
 - `measureZeroOffset()` - Measure and set zero offset from current sensor reading
 - `isBelow(float limit)` - Returns true if pressure is below the specified limit
 - `isAbove(float limit)` - Returns true if pressure is above the specified limit
 - `isBetween(float low, float high)` - Returns true if pressure is between the specified limits
 
+Notes:
+- Zero offset is stored internally as a raw sensor code (unitless) for precision and unit-agnostic behavior. Public APIs work in your desired unit; conversions to/from raw are handled internally.
 
 ### Status Codes
 - `0b00` - Normal operation, data valid
@@ -196,29 +198,32 @@ To configure a sensor for gauge pressure readings:
 void setup() {
     Serial.begin(115200);
     sensor.begin();
-    
-    // Read current pressure (should be at atmospheric/reference condition)
-    sensor.readSensorData(4);
-    
-    // Measure and set zero offset automatically
-    sensor.measureZeroOffset();
-    
+
     // Set to gauge mode with bar units
     sensor.setDesiredUnit(ELVH_Sensor::bar, ELVH_Sensor::gauge);
-}
 
-void loop() {
+    // Option A: Measure and set zero offset automatically (sensor at reference)
     sensor.readSensorData(4);
-    
-    // Now getPressure() returns gauge pressure (relative to zero offset)
-    Serial.print("Gauge Pressure: ");
-    Serial.println(sensor.getPressure());
-    
-    delay(1000);
+    sensor.measureZeroOffset();
+
+    // Option B: Manually set zero offset in desired unit
+    sensor.setZeroOffset(1.013f); // e.g., 1.013 bar atmospheric
+
+    // Option C: Manually set raw zero offset
+    sensor.setZeroOffsetRaw(8192); // example raw code
 }
 ```
 
-**Note:** The zero offset is stored as a raw sensor value (unitless), so it remains valid even if you change the output unit later.
+Check or display current zero offset:
+```cpp
+Serial.print("Zero offset (raw): ");
+Serial.println(sensor.getZeroOffset());
+
+Serial.print("Zero offset (bar): ");
+Serial.println(sensor.getZeroOffsetInUnit());
+```
+
+**Note:** Zero offset is stored as a raw sensor value (unitless). The float setter converts your desired-unit value into raw internally, and `getZeroOffsetInUnit()` converts it back for display.
 
 ## Documentation
 
