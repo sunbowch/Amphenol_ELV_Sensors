@@ -611,7 +611,7 @@ float ELVH_Sensor::convertPressure(uint16_t rawPressure) {
     // Apply zero offset for gauge mode at the raw level
     uint16_t adjustedPressure = rawPressure;
     if (pressureRef == gauge) {
-        adjustedPressure = rawPressure - zeroOffset;
+        adjustedPressure = max(rawPressure - zeroOffset, 0);
     }
     
     // Calculate the pressure based on the transfer function
