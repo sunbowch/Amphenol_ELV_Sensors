@@ -34,10 +34,40 @@ ELVH_Sensor::ELVH_Sensor(const char* model) {
     this->pressureRef = absolute; // Default to absolute
 }
 
+// New: set external mutex for thread-safe MCP access
+void ELVH_Sensor::setMCPMutex(void* mutex) {
+    mcpMutex = mutex;
+    Serial.println("ELVH_Sensor::setMCPMutex configured");
+}
+
+// Helper: lock MCP mutex if available
+void ELVH_Sensor::mcpLock() {
+    #ifdef configUSE_PREEMPTION
+    // FreeRTOS environment detected
+    if (mcpMutex != nullptr) {
+        if (xSemaphoreTake((SemaphoreHandle_t)mcpMutex, portMAX_DELAY) != pdTRUE) {
+            Serial.println("ELVH_Sensor::mcpLock ERROR: Failed to acquire mutex!");
+            return;
+        }
+    }
+    #endif
+}
+
+// Helper: unlock MCP mutex if available
+void ELVH_Sensor::mcpUnlock() {
+    #ifdef configUSE_PREEMPTION
+    // FreeRTOS environment detected
+    if (mcpMutex != nullptr) {
+        xSemaphoreGive((SemaphoreHandle_t)mcpMutex);
+    }
+    #endif
+}
+
 // New method: configure MCP controller and MCP pin used as CS
 void ELVH_Sensor::setMCP(Adafruit_MCP23X17* mcp, uint8_t csPin) {
     Serial.print("ELVH_Sensor::setMCP enter csPin="); Serial.println(csPin);
     Serial.flush();
+    // Note: No mutex needed here - this is a setup function, not runtime I/O
     this->mcpPtr = mcp;
     // Validate csPin for MCP range
     if (csPin < 16 && mcpPtr != nullptr) {
@@ -48,7 +78,6 @@ void ELVH_Sensor::setMCP(Adafruit_MCP23X17* mcp, uint8_t csPin) {
         Serial.print("ELVH_Sensor::setMCP ok csPin="); Serial.println(csPin);
         Serial.flush();
     } else {
-        // invalid MCP pin: fall back to MCU GPIO mode (user must call setCSPin if needed)
         this->useMCP = false;
         this->mcpPtr = nullptr;
         Serial.print("ELVH_Sensor::setMCP invalid csPin="); Serial.println(csPin);
@@ -62,12 +91,10 @@ void ELVH_Sensor::setCSPin(uint8_t csPin) {
     this->csPin = csPin;
     this->useMCP = false;
     this->mcpPtr = nullptr;
-    // Only configure MCU GPIO CS if it's not a reserved pin (0..10) and not sentinel (255)
     if (csPin != 255 && csPin >= 11 && csPin <= 39) {
         pinMode(csPin, OUTPUT);
-        digitalWrite(csPin, csActiveLow ? HIGH : LOW); // ensure deselected value
+        digitalWrite(csPin, HIGH); // CS inactive (HIGH for active-low)
     } else {
-        // Do not attempt to configure reserved pins or sentinel
         Serial.print("setCSPin: skipping pinMode for csPin=");
         Serial.println(csPin);
     }
@@ -103,13 +130,13 @@ void ELVH_Sensor::beginSPI(uint8_t csPin) {
     if (!useMCP) {
         if (this->csPin != 255 && this->csPin >= 11 && this->csPin <= 39) {
             pinMode(this->csPin, OUTPUT);
-            digitalWrite(this->csPin, csActiveLow ? HIGH : LOW); // deactivate by default
+            digitalWrite(this->csPin, HIGH); // CS inactive
         } else {
             Serial.print("beginSPI: not configuring MCU CS for pin "); Serial.println(this->csPin);
         }
     } else if (mcpPtr) {
         mcpPtr->pinMode(this->csPin, OUTPUT);
-        mcpPtr->digitalWrite(this->csPin, csActiveLow ? HIGH : LOW);
+        mcpPtr->digitalWrite(this->csPin, HIGH); // CS inactive
     }
     Serial.print("ELVH_Sensor::beginSPI exit csPin="); Serial.println(csPin);
     Serial.flush();
@@ -316,7 +343,8 @@ float ELVH_Sensor::unitToPsi(Unit u, float value) {
     switch (u) {
         case bar:   return value / 0.0689476f;
         case mbar:  return value / 68.9476f;
-        case ubar:  return value / 6894.76f;
+        case ubar:  return value / 68947.57f;
+        case Pa:    return value / 6894.76f; // Assuming 1 Pa = 0.000145038 psi
         case inH2O: return value / 27.6807f;
         case psi:
         default:    return value;
@@ -327,7 +355,8 @@ float ELVH_Sensor::psiToUnit(Unit u, float valuePsi) {
     switch (u) {
         case bar:   return valuePsi * 0.0689476f;
         case mbar:  return valuePsi * 68.9476f;
-        case ubar:  return valuePsi * 6894.76f;
+        case ubar:  return valuePsi * 68947.6f;
+        case Pa:    return valuePsi * 6894.76f; // Assuming 1 Pa = 0.000145038 psi
         case inH2O: return valuePsi * 27.6807f;
         case psi:
         default:    return valuePsi;
@@ -375,28 +404,26 @@ void ELVH_Sensor::readSensorData(uint8_t bytesToRead) {
     if (isI2C) {
         readI2C(bytesToRead);
     } else {
-        // Use MCP digital write if configured and valid, else MCU's digitalWrite:
         if (useMCP && mcpPtr && csPin < 16) {
-            // Now assert this sensor's CS and give settle time
-            mcpPtr->digitalWrite(csPin, LOW);
-            // Wait for MCP output to reflect asserted state; use mcpPtr (not global mcp).
-            while (mcpPtr->digitalRead(csPin) != (csActiveLow ? LOW : HIGH)) {
+            mcpLock();
+            mcpPtr->digitalWrite(csPin, LOW); // Assert CS
+            while (mcpPtr->digitalRead(csPin) != LOW) {
                 yield();
             }
         } else if (csPin < 255) {
-            digitalWrite(csPin, LOW);
-            // Wait for MCU pin to reflect asserted state
-            while (digitalRead(csPin) != (csActiveLow ? LOW : HIGH)) {
+            digitalWrite(csPin, LOW); // Assert CS
+            while (digitalRead(csPin) != LOW) {
                 yield();
             }
-        } // else, no CS defined; proceed but may collide on bus
+        }
         readSPI(bytesToRead);
 
         if (useMCP && mcpPtr && csPin < 16) {
-            mcpPtr->digitalWrite(csPin, HIGH);
-            delayMicroseconds(2); // increased
+            mcpPtr->digitalWrite(csPin, HIGH); // Deassert CS
+            delayMicroseconds(2);
+            mcpUnlock();
         } else if (csPin < 255) {
-            digitalWrite(csPin, HIGH);
+            digitalWrite(csPin, HIGH); // Deassert CS
             delayMicroseconds(2);
         }
     }
@@ -502,36 +529,27 @@ void ELVH_Sensor::setSPIClock(uint32_t hz) {
     Serial.print("ELVH_Sensor::setSPIClock set to "); Serial.println(spiClock);
 }
 
-// Set CS polarity (activeLow true => assert with LOW)
-void ELVH_Sensor::setCSActiveLow(bool activeLow) {
-    csActiveLow = activeLow;
-}
-
-// Return CS polarity
-bool ELVH_Sensor::getCSActiveLow() const {
-    return csActiveLow;
-}
-
-// CS helpers that toggle the CS for this sensor
 void ELVH_Sensor::assertCS() {
     if (useMCP && mcpPtr && csPin < 16 && csPin >= 0) {
-        mcpPtr->digitalWrite(csPin, csActiveLow ? LOW : HIGH);
+        mcpLock();
+        mcpPtr->digitalWrite(csPin, LOW); // Assert CS (active-low)
+        mcpUnlock();
     } else if (csPin != 255 && csPin >= 11 && csPin <= 39) {
-        digitalWrite(csPin, csActiveLow ? LOW : HIGH);
+        digitalWrite(csPin, LOW); // Assert CS (active-low)
     } else {
-        // invalid CS (sentinel or reserved MCU) - do not touch; optionally log
-        Serial.print("assertCS: skipping assertCS for csPin="); Serial.println(csPin);
+        Serial.print("assertCS: skipping for csPin="); Serial.println(csPin);
     }
 }
 
 void ELVH_Sensor::deassertCS() {
     if (useMCP && mcpPtr && csPin < 16 && csPin >= 0) {
-        mcpPtr->digitalWrite(csPin, csActiveLow ? HIGH : LOW);
+        mcpLock();
+        mcpPtr->digitalWrite(csPin, HIGH); // Deassert CS (active-low)
+        mcpUnlock();
     } else if (csPin != 255 && csPin >= 11 && csPin <= 39) {
-        digitalWrite(csPin, csActiveLow ? HIGH : LOW);
+        digitalWrite(csPin, HIGH); // Deassert CS (active-low)
     } else {
-        // invalid CS (sentinel or reserved MCU) - do not touch; optionally log
-        Serial.print("deassertCS: skipping deassertCS for csPin="); Serial.println(csPin);
+        Serial.print("deassertCS: skipping for csPin="); Serial.println(csPin);
     }
 }
 

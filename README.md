@@ -160,6 +160,8 @@ void loop() {
 
 ### Methods
 - `begin()` - Initialize the sensor
+- `setMCP(Adafruit_MCP23X17* mcp, uint8_t csPin)` - Configure MCP23X17 expander for CS pin
+- `setMCPMutex(void* mutex)` - Set FreeRTOS mutex for thread-safe MCP access
 - `readSensorData(uint8_t bytesToRead = 4)` - **Trigger bus transaction** and read sensor data (2, 3, or 4 bytes)
 - `getPressure()` - Get pressure in the desired unit from last read
 - `getTemperature()` - Get temperature in Celsius from last read
@@ -184,6 +186,8 @@ Notes:
 - `ELVH_Sensor::psi`
 - `ELVH_Sensor::bar`
 - `ELVH_Sensor::mbar`
+- `ELVH_Sensor::ubar`
+- `ELVH_Sensor::Pa`
 - `ELVH_Sensor::inH2O`
 
 ### Pressure Reference Modes
@@ -208,22 +212,16 @@ void setup() {
 
     // Option B: Manually set zero offset in desired unit
     sensor.setZeroOffset(1.013f); // e.g., 1.013 bar atmospheric
-
-    // Option C: Manually set raw zero offset
-    sensor.setZeroOffsetRaw(8192); // example raw code
 }
 ```
 
 Check or display current zero offset:
 ```cpp
-Serial.print("Zero offset (raw): ");
-Serial.println(sensor.getZeroOffset());
-
 Serial.print("Zero offset (bar): ");
-Serial.println(sensor.getZeroOffsetInUnit());
+Serial.println(sensor.getZeroOffset());
 ```
 
-**Note:** Zero offset is stored as a raw sensor value (unitless). The float setter converts your desired-unit value into raw internally, and `getZeroOffsetInUnit()` converts it back for display.
+**Note:** Zero offset is stored internally as a raw sensor value (unitless) for precision. The public API (`setZeroOffset()` and `getZeroOffset()`) automatically converts to/from your desired unit.
 
 ## Documentation
 
@@ -232,3 +230,31 @@ See the [ELV Series datasheet](datasheet/ELV_Series.pdf) for detailed sensor spe
 ## License
 
 This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
+
+### Thread Safety with MCP23X17
+
+When using multiple sensors with a shared MCP23X17 expander in a multi-threaded environment (e.g., FreeRTOS), protect concurrent access with a mutex:
+
+```cpp
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
+
+// Create a mutex for MCP access
+SemaphoreHandle_t mcpMutex = xSemaphoreCreateMutex();
+
+void setup() {
+    Serial.begin(115200);
+    
+    // Initialize MCP
+    mcp.begin_I2C(0x20);
+    
+    // Configure all sensors to use the shared MCP with mutex protection
+    sensor1.setMCP(&mcp, 0);
+    sensor1.setMCPMutex((void*)mcpMutex);
+    
+    sensor2.setMCP(&mcp, 1);
+    sensor2.setMCPMutex((void*)mcpMutex);
+}
+```
+
+The mutex is automatically acquired before MCP operations and released after, preventing conflicts when multiple tasks access the same MCP expander.

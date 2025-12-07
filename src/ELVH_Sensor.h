@@ -15,6 +15,7 @@ public:
         bar,
         mbar,
         ubar,
+        Pa,
         inH2O
     };
 
@@ -44,6 +45,7 @@ public:
     char sensorModel[20];
     void setCSPin(uint8_t csPin);
     void setMCP(Adafruit_MCP23X17* mcp, uint8_t csPin); // New API to use MCP23X17 expander
+    void setMCPMutex(void* mutex); // New: set external mutex for thread-safe MCP access
 
     // Force bus mode and runtime configuration
     void setI2CMode(bool mode);
@@ -51,11 +53,6 @@ public:
 
     // SPI helpers
     void setSPIClock(uint32_t hz);
-
-    // CS polarity control (true = active LOW; default true)
-    void setCSActiveLow(bool activeLow);
-    bool getCSActiveLow() const;
-    // Public deassert so other modules can deselect a sensor safely
     void deselectCS();
 
     // State accessors
@@ -87,6 +84,7 @@ private:
     bool isI2C; // New member variable to indicate if the sensor is I2C
     bool useMCP = false; // New member to support MCP-controlled CS
     Adafruit_MCP23X17* mcpPtr = nullptr; // Pointer for MCP instance
+    void* mcpMutex = nullptr; // Pointer to external mutex (e.g., SemaphoreHandle_t for FreeRTOS)
     void readSPI(uint8_t bytesToRead);
     void readI2C(uint8_t bytesToRead); // Updated method declaration
     void setSensorParameters(); // New method declaration
@@ -94,7 +92,6 @@ private:
     float convertTemperature(uint16_t rawTemperature);
     float convertToDesiredUnit(float pressure); // New method to convert pressure to the desired unit
     uint32_t spiClock = 800000; // default per-sensor SPI clock in Hz
-    bool csActiveLow = true; // default active low
     // CS helpers that toggle the CS for this sensor
     void assertCS();
     void deassertCS();
@@ -106,6 +103,10 @@ private:
     // Centralized unit conversion helpers
     static float unitToPsi(Unit u, float value);
     static float psiToUnit(Unit u, float value);
+
+    // Helper to safely access MCP with mutex protection
+    void mcpLock();
+    void mcpUnlock();
 };
 
 #endif // ELVH_SENSOR_H
