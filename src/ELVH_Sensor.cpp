@@ -599,6 +599,7 @@ void ELVH_Sensor::readSPI(uint8_t bytesToRead) {
     }
 
     // Keep low-level SPI read path quiet; status is consumed by higher-level logic.
+    // Keep low-level SPI read path quiet; status is consumed by higher-level logic.
 }
 
 float ELVH_Sensor::convertPressure(uint16_t rawPressure) {
@@ -640,6 +641,7 @@ bool ELVH_Sensor::isBetween(float low, float high) {
 }
 
 int ELVH_Sensor::getStatus() {
+    // Keep getter non-verbose; callers poll this frequently in tasks.
     // Keep getter non-verbose; callers poll this frequently in tasks.
     return status;
 }
