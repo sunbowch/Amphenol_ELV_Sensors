@@ -296,13 +296,13 @@ void ELVH_Sensor::setSensorParameters() {
     if (sensorType == 'D') {
         // Differential sensors use a signed midpoint offset and span around that midpoint.
         int midPct = (minPct + maxPct) / 2;
-        pOffset = (midPct * 16384 );
-        fullScaleSpan =(maxPct - minPct) * 16384/100;
+        pOffset = (midPct * 16384 / 100 );
+        fullScaleSpan =(maxPct - minPct) * 16384 / 100;
         pRef = 0;
     } else {
         // Gauge and absolute sensors use min percentage as offset.
-        pOffset = (minPct * 16384/100);
-        fullScaleSpan =(maxPct - minPct) * 16384/100;
+        pOffset = (minPct * 16384 / 100);
+        fullScaleSpan =(maxPct - minPct) * 16384 / 100;
         pRef = minPressure;
     }
 
