@@ -183,6 +183,17 @@ void ELVH_Sensor::setSensorParameters() {
             if (dash3) {
                 const char* wField = dash3 + 1;
                 int wlen = (int)strlen(wField);
+                if (wlen >= 2) {
+                    char N = wField[1];
+                    Serial.print("N: ");
+                    Serial.println(N);
+                    if (N == 'S') {
+                        isI2C = false;
+                    } else if (N >= '2' && N <= '7') {
+                        isI2C = true;
+                        i2cAddress = (N - '0') << 4 | 0x08; // Set I2C address to 0xN8
+                    }
+                }
                 if (wlen == 4) {
                     transferCode = wField[2];
                     if (wField[1] == 'A') {
@@ -257,41 +268,41 @@ void ELVH_Sensor::setSensorParameters() {
     Serial.println("ELVH_Sensor::setSensorParameters exit");
     Serial.flush();
 
-    float minPct = 0.0f;
-    float maxPct = 0.0f;
+    int minPct = 0;
+    int maxPct = 0;
     switch (transferCode) {
         case 'A':
-            minPct = 0.10f;
-            maxPct = 0.90f;
+            minPct = 10;
+            maxPct = 90;
             break;
         case 'B':
-            minPct = 0.05f;
-            maxPct = 0.95f;
+            minPct = 5;
+            maxPct = 95;
             break;
         case 'C':
-            minPct = 0.05f;
-            maxPct = 0.85f;
+            minPct = 5;
+            maxPct = 85;
             break;
         case 'D':
-            minPct = 0.04f;
-            maxPct = 0.94f;
+            minPct = 4;
+            maxPct = 94;
             break;
         default:
-            minPct = 0.10f;
-            maxPct = 0.90f;
+            minPct = 10;
+            maxPct = 90;
             break;
     }
 
     if (sensorType == 'D') {
         // Differential sensors use a signed midpoint offset and span around that midpoint.
-        float midPct = (minPct + maxPct) / 2.0f;
-        pOffset = static_cast<int>(midPct * 16384.0f + 0.5f);
-        fullScaleSpan = static_cast<int>((maxPct - minPct) * 16384.0f + 0.5f);
+        int midPct = (minPct + maxPct) / 2;
+        pOffset = (midPct * 16384 );
+        fullScaleSpan =(maxPct - minPct) * 16384/100;
         pRef = 0;
     } else {
         // Gauge and absolute sensors use min percentage as offset.
-        pOffset = static_cast<int>(minPct * 16384.0f + 0.5f);
-        fullScaleSpan = static_cast<int>((maxPct - minPct) * 16384.0f + 0.5f);
+        pOffset = (minPct * 16384/100);
+        fullScaleSpan =(maxPct - minPct) * 16384/100;
         pRef = minPressure;
     }
 
@@ -317,23 +328,6 @@ void ELVH_Sensor::setSensorParameters() {
         default:
             unit = psi;
             break;
-    }
-
-    // Find the 3rd '-' separator safely
-    const char* p = sensorModel;
-    const char* firstDash = strchr(p, '-');
-    const char* secondDash = firstDash ? strchr(firstDash + 1, '-') : nullptr;
-    const char* thirdDash = secondDash ? strchr(secondDash + 1, '-') : nullptr;
-    if (thirdDash != nullptr && thirdDash[1] != '\0') {
-        char N = thirdDash[2]; // first char after '-' then index 1/2 used earlier
-        Serial.print("N: ");
-        Serial.println(N);
-        if (N == 'S') {
-            isI2C = false;
-        } else if (N >= '2' && N <= '7') {
-            isI2C = true;   
-            i2cAddress = (N - '0') << 4 | 0x08; // Set I2C address to 0xN8
-        }
     }
 }
 
