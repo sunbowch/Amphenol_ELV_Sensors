@@ -31,6 +31,8 @@ public:
     void beginI2C();
     void readSensorData(uint8_t bytesToRead = 4);
     int getStatus();
+    int getRawPressure();
+    int getRawTemperature();
     float getPressure();
     float getTemperature();
     bool isBelow(float limit);
@@ -69,10 +71,12 @@ public:
 private:
     float minPressure;
     float maxPressure;
+    float pressure;
+    float temperature;
     float pFactor;
     uint16_t pOffset;
-    uint16_t pressure;
-    uint16_t temperature;
+    uint16_t rawPressure;
+    uint16_t rawTemperature;
     int status;
     Unit unit;          //default unit of the sensor
     Unit dunit;         //unit to display

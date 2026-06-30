@@ -399,7 +399,7 @@ float ELVH_Sensor::getZeroOffset() const {
 
 void ELVH_Sensor::measureZeroOffset() {
     readSensorData(2); // read pressure only
-    setZeroOffsetRaw(pressure);
+    setZeroOffsetRaw(rawPressure);
     Serial.print("ELVH_Sensor::measureZeroOffset raw="); Serial.println(getZeroOffsetRaw());
 }
 
@@ -469,12 +469,12 @@ void ELVH_Sensor::readI2C(uint8_t bytesToRead) {
             uint8_t msb = Wire.read();
             uint8_t lsb = Wire.read();
             status = (msb >> 6) & 0x03;
-            pressure = ((msb & 0x3F) << 8) | lsb;
+            rawPressure = ((msb & 0x3F) << 8) | lsb;
         } else {
             // Not enough data to determine pressure; mark as error and retry
             status = 0xFF;
-            pressure = 0;
-            temperature = 0;
+            rawPressure = 0;
+            rawTemperature = 0;
             if (received < 2) {
                 Serial.println("ELVH_Sensor::readI2C not enough data for status+pressure");
                 delay(10);
@@ -485,7 +485,7 @@ void ELVH_Sensor::readI2C(uint8_t bytesToRead) {
         // Read temperature if present
         if (bytesToRead >= 3 && received >= 3 && Wire.available() >= 1) {
             uint8_t msb = Wire.read();
-            temperature = msb << 3;
+            rawTemperature = msb << 3;
         } else if (bytesToRead >= 3) {
             // missing byte(s)
             Serial.println("ELVH_Sensor::readI2C missing MSB temperature");
@@ -493,7 +493,7 @@ void ELVH_Sensor::readI2C(uint8_t bytesToRead) {
 
         if (bytesToRead == 4 && received >= 4 && Wire.available() >= 1) {
             uint8_t lsb = Wire.read();
-            temperature |= (lsb >> 5) & 0x07;
+            rawTemperature |= (lsb >> 5) & 0x07;
         } else if (bytesToRead == 4) {
             Serial.println("ELVH_Sensor::readI2C missing LSB temperature");
         }
@@ -505,8 +505,8 @@ void ELVH_Sensor::readI2C(uint8_t bytesToRead) {
     if (attempt == MAX_RETRIES) {
         // we failed all attempts; mark as error
         status = 0xFF;
-        pressure = 0;
-        temperature = 0;
+        rawPressure = 0;
+        rawTemperature = 0;
         Serial.print("ELVH_Sensor::readI2C FAILED after ");
         Serial.print(MAX_RETRIES);
         Serial.print(" attempts, final rc=");
@@ -518,9 +518,9 @@ void ELVH_Sensor::readI2C(uint8_t bytesToRead) {
         //Serial.print("ELVH_Sensor::readI2C success status=0x");
         //Serial.print(status, HEX);
         //Serial.print(" pressure=");
-        //Serial.print(pressure);
+        //Serial.print(rawPressure);
         //Serial.print(" temperature_raw=");
-        //Serial.println(temperature);
+        //Serial.println(rawTemperature);
     }
 }
 
@@ -576,20 +576,20 @@ void ELVH_Sensor::readSPI(uint8_t bytesToRead) {
 
     if (bytesToRead == 2) {
         status = (response >> 14) & 0x03;
-        pressure = response & 0x3FFF;
-        temperature = 0; // Temperature data is not available
+        rawPressure = response & 0x3FFF;
+        rawTemperature = 0; // Temperature data is not available
     } else if (bytesToRead == 3) {
         status = (response >> 22) & 0x03;
-        pressure = (response >> 8) & 0x3FFF;
-        temperature = (response & 0xFF) << 3; // Only MSB of temperature is available
+        rawPressure = (response >> 8) & 0x3FFF;
+        rawTemperature = (response & 0xFF) << 3; // Only MSB of temperature is available
     } else if (bytesToRead == 4) {
         status = (response >> 30) & 0x03;
-        pressure = (response >> 16) & 0x3FFF;
-        temperature = (response & 0xFFFF) >> 5;
+        rawPressure = (response >> 16) & 0x3FFF;
+        rawTemperature = (response & 0xFFFF) >> 5;
     } else {
         status = 0xFF; // Invalid status
-        pressure = 0;
-        temperature = 0;
+        rawPressure = 0;
+        rawTemperature = 0;
     }
 
     // Keep low-level SPI read path quiet; status is consumed by higher-level logic.
@@ -604,7 +604,7 @@ float ELVH_Sensor::convertPressure(uint16_t rawPressure) {
     }
     
     // Calculate the pressure based on the transfer function
-    float pressure = minPressure + (adjustedPressure - pOffset) * pFactor;
+    pressure = minPressure + (adjustedPressure - pOffset) * pFactor;
     return pressure;
 }
 
@@ -613,11 +613,19 @@ float ELVH_Sensor::convertTemperature(uint16_t rawTemperature) {
 }
 
 float ELVH_Sensor::getPressure() {
-    return convertToDesiredUnit(convertPressure(pressure));
+    return convertToDesiredUnit(convertPressure(rawPressure));
 }
 
 float ELVH_Sensor::getTemperature() {
-    return convertTemperature(temperature);
+    return convertTemperature(rawTemperature);
+}
+
+int ELVH_Sensor::getRawPressure() {
+    return rawPressure;
+}
+
+int ELVH_Sensor::getRawTemperature() {
+    return rawTemperature;
 }
 
 bool ELVH_Sensor::isBelow(float limit) {
