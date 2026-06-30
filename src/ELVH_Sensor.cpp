@@ -156,21 +156,47 @@ void ELVH_Sensor::setSensorModel(const char* model) {
 void ELVH_Sensor::setSensorParameters() {
     Serial.println("ELVH_Sensor::setSensorParameters enter");
     Serial.flush();
-    // Extract PPPP (first token) safely and transfer function D from PPPP's last char
+    // Parse the model into X-Y-Z-W. X determines the pressure range token and type.
+    // PPPP last char determines the sensor type (D/G/A); W[2] determines the digital transfer/range option.
     char PPPP[6] = {0};
-    char D = '\0';
-    int fullScaleSpan=16384;
-    float pRef=0;
-    const char* dash = strchr(sensorModel, '-');
-    int length = dash ? (dash - sensorModel) : (int)strlen(sensorModel);
-    if (length > (int)sizeof(PPPP)-1) length = sizeof(PPPP)-1;
-    strncpy(PPPP, sensorModel, length);
-    PPPP[length] = '\0';
+    char sensorType = '\0';
+    char transferCode = '\0';
+    bool analogSensor = false;
+    int fullScaleSpan = 16384;
+    float pRef = 0;
 
-    if (length > 0) {
-        D = PPPP[length-1];
-    } else {
-        D = '\0';
+    const char* p = sensorModel;
+    const char* dash1 = strchr(p, '-');
+    int xlen = dash1 ? (dash1 - p) : (int)strlen(p);
+    if (xlen > (int)sizeof(PPPP) - 1) xlen = sizeof(PPPP) - 1;
+    strncpy(PPPP, p, xlen);
+    PPPP[xlen] = '\0';
+
+    if (xlen > 0) {
+        sensorType = PPPP[xlen - 1];
+    }
+
+    if (dash1) {
+        const char* dash2 = strchr(dash1 + 1, '-');
+        if (dash2) {
+            const char* dash3 = strchr(dash2 + 1, '-');
+            if (dash3) {
+                const char* wField = dash3 + 1;
+                int wlen = (int)strlen(wField);
+                if (wlen == 4) {
+                    transferCode = wField[2];
+                    if (wField[1] == 'A') {
+                        analogSensor = true;
+                        Serial.print("Analog sensor not supported: ");
+                        Serial.println(sensorModel);
+                    }
+                }
+            }
+        }
+    }
+
+    if (transferCode != 'A' && transferCode != 'B' && transferCode != 'C' && transferCode != 'D') {
+        transferCode = '\0';
     }
 
     // Lookup table for pressure ranges (example values, replace with actual values)
@@ -231,55 +257,44 @@ void ELVH_Sensor::setSensorParameters() {
     Serial.println("ELVH_Sensor::setSensorParameters exit");
     Serial.flush();
 
-    if ((maxPressure + minPressure) == 0) { // differential sensors
-        pRef = 0;
-        switch (D) {
-            case 'A':
-                fullScaleSpan = 13108;
-                pOffset = 8140;
-                break;
-            case 'B':
-                fullScaleSpan = 14746;
-                pOffset = 8140;
-                break;
-            case 'C':
-                fullScaleSpan = 13108;
-                pOffset = 7373;
-                break;
-            case 'D':
-                fullScaleSpan = 14746;
-                pOffset = 8028;
-                break;
-            default:
-                pOffset = 8192;
-                fullScaleSpan = 16384;
-                break;
-        }
-    } else {
-        pRef = minPressure;
-        switch (D) {
-            case 'A':
-                pOffset = 1638;
-                fullScaleSpan = 13107;
-                break;
-            case 'B':
-                pOffset = 819;
-                fullScaleSpan = 14746;
-                break;
-            case 'C':
-                pOffset = 819;
-                fullScaleSpan = 13107;
-                break;
-            case 'D':
-                pOffset = 655;
-                fullScaleSpan = 14746;
-                break;
-            default:
-                pOffset = 0;
-                fullScaleSpan = 16384;
-                break;
-        }
+    float minPct = 0.0f;
+    float maxPct = 0.0f;
+    switch (transferCode) {
+        case 'A':
+            minPct = 0.10f;
+            maxPct = 0.90f;
+            break;
+        case 'B':
+            minPct = 0.05f;
+            maxPct = 0.95f;
+            break;
+        case 'C':
+            minPct = 0.05f;
+            maxPct = 0.85f;
+            break;
+        case 'D':
+            minPct = 0.04f;
+            maxPct = 0.94f;
+            break;
+        default:
+            minPct = 0.10f;
+            maxPct = 0.90f;
+            break;
     }
+
+    if (sensorType == 'D') {
+        // Differential sensors use a signed midpoint offset and span around that midpoint.
+        float midPct = (minPct + maxPct) / 2.0f;
+        pOffset = static_cast<int>(midPct * 16384.0f + 0.5f);
+        fullScaleSpan = static_cast<int>((maxPct - minPct) * 16384.0f + 0.5f);
+        pRef = 0;
+    } else {
+        // Gauge and absolute sensors use min percentage as offset.
+        pOffset = static_cast<int>(minPct * 16384.0f + 0.5f);
+        fullScaleSpan = static_cast<int>((maxPct - minPct) * 16384.0f + 0.5f);
+        pRef = minPressure;
+    }
+
     pFactor = (maxPressure - minPressure) / fullScaleSpan;
     minPressure = pRef;
 
@@ -583,28 +598,7 @@ void ELVH_Sensor::readSPI(uint8_t bytesToRead) {
         temperature = 0;
     }
 
-    //Serial.print("Status: ");
-    //Serial.println(status, BIN);
-    switch (status) {
-        case 0b00:
-            //Serial.println("No error");
-            //Serial.print("Pressure: ");
-            //Serial.println(convertToDesiredUnit(convertPressure(pressure)));
-            if (bytesToRead >= 3) {
-                //Serial.print("Temperature: ");
-                //Serial.println(convertTemperature(temperature));
-            }
-            break;
-        case 0b10:
-            Serial.println("No new data since last read");
-            break;
-        case 0b11:
-            Serial.println("Error");
-            break;
-        default:
-            Serial.println("Unknown status");
-            break;
-    }
+    // Keep low-level SPI read path quiet; status is consumed by higher-level logic.
 }
 
 float ELVH_Sensor::convertPressure(uint16_t rawPressure) {
@@ -646,20 +640,7 @@ bool ELVH_Sensor::isBetween(float low, float high) {
 }
 
 int ELVH_Sensor::getStatus() {
-    switch (status) {
-        case 0b00:
-            //Serial.println("Ready");
-            break;
-        case 0b10:
-            Serial.println("No new data since last read");
-            break;
-        case 0b11:
-            Serial.println("Error");
-            break;
-        default:
-            Serial.println("Unknown status");
-            break;
-    }
+    // Keep getter non-verbose; callers poll this frequently in tasks.
     return status;
 }
 
