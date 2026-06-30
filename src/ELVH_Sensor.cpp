@@ -158,19 +158,26 @@ void ELVH_Sensor::setSensorParameters() {
     Serial.flush();
     // Extract PPPP (first token) safely and transfer function D from PPPP's last char
     char PPPP[6] = {0};
-    char D = '\0';
-    int fullScaleSpan=16384;
-    float pRef=0;
+    char rangeCode = '\0';
+    char transferCode = '\0';
+    int fullScaleSpan = 16384;
+    float pRef = 0;
     const char* dash = strchr(sensorModel, '-');
     int length = dash ? (dash - sensorModel) : (int)strlen(sensorModel);
-    if (length > (int)sizeof(PPPP)-1) length = sizeof(PPPP)-1;
+    if (length > (int)sizeof(PPPP) - 1) length = sizeof(PPPP) - 1;
     strncpy(PPPP, sensorModel, length);
     PPPP[length] = '\0';
 
     if (length > 0) {
-        D = PPPP[length-1];
-    } else {
-        D = '\0';
+        rangeCode = PPPP[length-1];
+    }
+
+    size_t modelLen = strlen(sensorModel);
+    if (modelLen >= 2) {
+        transferCode = sensorModel[modelLen - 2];
+    }
+    if (transferCode != 'A' && transferCode != 'B' && transferCode != 'C' && transferCode != 'D') {
+        transferCode = rangeCode;
     }
 
     // Lookup table for pressure ranges (example values, replace with actual values)
@@ -233,51 +240,77 @@ void ELVH_Sensor::setSensorParameters() {
 
     if ((maxPressure + minPressure) == 0) { // differential sensors
         pRef = 0;
-        switch (D) {
-            case 'A':
-                fullScaleSpan = 13108;
-                pOffset = 8140;
-                break;
-            case 'B':
-                fullScaleSpan = 14746;
-                pOffset = 8140;
-                break;
-            case 'C':
-                fullScaleSpan = 13108;
-                pOffset = 7373;
-                break;
-            case 'D':
-                fullScaleSpan = 14746;
-                pOffset = 8028;
-                break;
-            default:
-                pOffset = 8192;
-                fullScaleSpan = 16384;
-                break;
+        if (rangeCode == 'D') {
+            switch (transferCode) {
+                case 'A':
+                case 'C':
+                    fullScaleSpan = 13108;
+                    pOffset = 6554;
+                    break;
+                case 'B':
+                case 'D':
+                    fullScaleSpan = 14746;
+                    pOffset = 7373;
+                    break;
+                default:
+                    pOffset = 8192;
+                    fullScaleSpan = 16384;
+                    break;
+            }
+        } else {
+            switch (transferCode) {
+                case 'A':
+                case 'C':
+                    fullScaleSpan = 13108;
+                    pOffset = 8140;
+                    break;
+                case 'B':
+                case 'D':
+                    fullScaleSpan = 14746;
+                    pOffset = 8140;
+                    break;
+                default:
+                    pOffset = 8192;
+                    fullScaleSpan = 16384;
+                    break;
+            }
         }
     } else {
         pRef = minPressure;
-        switch (D) {
-            case 'A':
-                pOffset = 1638;
-                fullScaleSpan = 13107;
-                break;
-            case 'B':
-                pOffset = 819;
-                fullScaleSpan = 14746;
-                break;
-            case 'C':
-                pOffset = 819;
-                fullScaleSpan = 13107;
-                break;
-            case 'D':
-                pOffset = 655;
-                fullScaleSpan = 14746;
-                break;
-            default:
-                pOffset = 0;
-                fullScaleSpan = 16384;
-                break;
+        if (rangeCode == 'D') {
+            switch (transferCode) {
+                case 'A':
+                case 'C':
+                    pOffset = 655;
+                    fullScaleSpan = 13108;
+                    break;
+                case 'B':
+                case 'D':
+                    pOffset = 7373;
+                    fullScaleSpan = 14746;
+                    break;
+                default:
+                    pOffset = 0;
+                    fullScaleSpan = 16384;
+                    break;
+            }
+        } else {
+            switch (transferCode) {
+                case 'A':
+                case 'C':
+                    pOffset = 1638;
+                    fullScaleSpan = 13108;
+                    break;
+                case 'B':
+                case 'D':
+                    pOffset = 819;
+                    fullScaleSpan = 14746;
+                    break;
+                default:
+                    pOffset = 0;
+                    fullScaleSpan = 16384;
+                    break;
+            }
         }
     }
     pFactor = (maxPressure - minPressure) / fullScaleSpan;
@@ -583,28 +616,7 @@ void ELVH_Sensor::readSPI(uint8_t bytesToRead) {
         temperature = 0;
     }
 
-    //Serial.print("Status: ");
-    //Serial.println(status, BIN);
-    switch (status) {
-        case 0b00:
-            //Serial.println("No error");
-            //Serial.print("Pressure: ");
-            //Serial.println(convertToDesiredUnit(convertPressure(pressure)));
-            if (bytesToRead >= 3) {
-                //Serial.print("Temperature: ");
-                //Serial.println(convertTemperature(temperature));
-            }
-            break;
-        case 0b10:
-            Serial.println("No new data since last read");
-            break;
-        case 0b11:
-            Serial.println("Error");
-            break;
-        default:
-            Serial.println("Unknown status");
-            break;
-    }
+    // Keep low-level SPI read path quiet; status is consumed by higher-level logic.
 }
 
 float ELVH_Sensor::convertPressure(uint16_t rawPressure) {
@@ -646,20 +658,7 @@ bool ELVH_Sensor::isBetween(float low, float high) {
 }
 
 int ELVH_Sensor::getStatus() {
-    switch (status) {
-        case 0b00:
-            //Serial.println("Ready");
-            break;
-        case 0b10:
-            Serial.println("No new data since last read");
-            break;
-        case 0b11:
-            Serial.println("Error");
-            break;
-        default:
-            Serial.println("Unknown status");
-            break;
-    }
+    // Keep getter non-verbose; callers poll this frequently in tasks.
     return status;
 }
 
