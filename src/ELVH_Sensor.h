@@ -44,6 +44,10 @@ public:
     void setZeroOffset(float offsetInDesiredUnit); // NEW: set offset using desired units
     float getZeroOffset() const; // returns offset in desired unit
     void measureZeroOffset(); // New method to measure and set zero offset from current reading
+    bool hasPressureHistory() const;
+    float getPressureDelta() const;
+    bool isIncreasing(float threshold = 0.0f) const;
+    bool isDecreasing(float threshold = 0.0f) const;
     char sensorModel[20];
     void setCSPin(uint8_t csPin);
     void setMCP(Adafruit_MCP23X17* mcp, uint8_t csPin); // New API to use MCP23X17 expander
@@ -95,6 +99,10 @@ private:
     float convertPressure(uint16_t rawPressure);
     float convertTemperature(uint16_t rawTemperature);
     float convertToDesiredUnit(float pressure); // New method to convert pressure to the desired unit
+    float previousPressure = 0.0f;
+    bool pressureHistoryValid = false;
+    float pressureDelta = 0.0f;
+    void updatePressureTrend(uint16_t rawPressure);
     uint32_t spiClock = 800000; // default per-sensor SPI clock in Hz
     // CS helpers that toggle the CS for this sensor
     void assertCS();

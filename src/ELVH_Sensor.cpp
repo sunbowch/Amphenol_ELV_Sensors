@@ -470,6 +470,7 @@ void ELVH_Sensor::readI2C(uint8_t bytesToRead) {
             uint8_t lsb = Wire.read();
             status = (msb >> 6) & 0x03;
             rawPressure = ((msb & 0x3F) << 8) | lsb;
+            updatePressureTrend(rawPressure);
         } else {
             // Not enough data to determine pressure; mark as error and retry
             status = 0xFF;
@@ -577,14 +578,17 @@ void ELVH_Sensor::readSPI(uint8_t bytesToRead) {
     if (bytesToRead == 2) {
         status = (response >> 14) & 0x03;
         rawPressure = response & 0x3FFF;
+        updatePressureTrend(rawPressure);
         rawTemperature = 0; // Temperature data is not available
     } else if (bytesToRead == 3) {
         status = (response >> 22) & 0x03;
         rawPressure = (response >> 8) & 0x3FFF;
+        updatePressureTrend(rawPressure);
         rawTemperature = (response & 0xFF) << 3; // Only MSB of temperature is available
     } else if (bytesToRead == 4) {
         status = (response >> 30) & 0x03;
         rawPressure = (response >> 16) & 0x3FFF;
+        updatePressureTrend(rawPressure);
         rawTemperature = (response & 0xFFFF) >> 5;
     } else {
         status = 0xFF; // Invalid status
@@ -610,6 +614,76 @@ float ELVH_Sensor::convertPressure(uint16_t rawPressure) {
 
 float ELVH_Sensor::convertTemperature(uint16_t rawTemperature) {
     return rawTemperature * (200.0 / (2047.0)) - 50.0;
+}
+
+void ELVH_Sensor::updatePressureTrend(uint16_t rawPressure) {
+    float newPressure = convertToDesiredUnit(convertPressure(rawPressure));
+    if (pressureHistoryValid) {
+        uint8_t lastIndex = (pressureHistoryIndex + kMaxPressureHistory - 1) % kMaxPressureHistory;
+        float oldPressure = pressureHistory[lastIndex];
+        pressureDelta = newPressure - oldPressure;
+    } else {
+        pressureDelta = 0.0f;
+    }
+
+    pressureHistory[pressureHistoryIndex] = newPressure;
+    pressureHistoryIndex = (pressureHistoryIndex + 1) % kMaxPressureHistory;
+    if (pressureHistoryCount < kMaxPressureHistory) {
+        pressureHistoryCount++;
+    }
+    pressureHistoryValid = pressureHistoryCount > 0;
+    this->rawPressure = rawPressure;
+}
+
+bool ELVH_Sensor::hasPressureHistory() const {
+    return pressureHistoryValid;
+}
+
+float ELVH_Sensor::getPressureDelta() const {
+    return pressureDelta;
+}
+
+bool ELVH_Sensor::isIncreasing(float threshold) const {
+    return pressureHistoryValid && pressureDelta > threshold;
+}
+
+bool ELVH_Sensor::isDecreasing(float threshold) const {
+    return pressureHistoryValid && pressureDelta < -threshold;
+}
+
+float ELVH_Sensor::getPressureAverage(uint8_t count, uint8_t offset) const {
+    if (count == 0 || !pressureHistoryValid) {
+        return 0.0f;
+    }
+    if (count > pressureHistoryCount) {
+        count = pressureHistoryCount;
+    }
+
+    uint8_t endIndex = (pressureHistoryIndex + kMaxPressureHistory - 1 - offset) % kMaxPressureHistory;
+    float sum = 0.0f;
+    for (uint8_t i = 0; i < count; ++i) {
+        uint8_t index = (endIndex + kMaxPressureHistory - i) % kMaxPressureHistory;
+        sum += pressureHistory[index];
+    }
+    return sum / count;
+}
+
+bool ELVH_Sensor::isIncreasingAverage(uint8_t count, float threshold) const {
+    if (count == 0 || pressureHistoryCount < count * 2) {
+        return false;
+    }
+    float currentAvg = getPressureAverage(count, 0);
+    float previousAvg = getPressureAverage(count, count);
+    return (currentAvg - previousAvg) > threshold;
+}
+
+bool ELVH_Sensor::isDecreasingAverage(uint8_t count, float threshold) const {
+    if (count == 0 || pressureHistoryCount < count * 2) {
+        return false;
+    }
+    float currentAvg = getPressureAverage(count, 0);
+    float previousAvg = getPressureAverage(count, count);
+    return (currentAvg - previousAvg) < -threshold;
 }
 
 float ELVH_Sensor::getPressure() {
