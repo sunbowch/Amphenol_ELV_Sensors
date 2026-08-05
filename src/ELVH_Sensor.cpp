@@ -444,43 +444,72 @@ void ELVH_Sensor::readI2C(uint8_t bytesToRead) {
     int attempt;
     int rc = -1;
     int received = 0;
+
+    auto resetI2cBus = [&]() {
+        // Try to clear any stuck transaction state and reinitialize the I2C peripheral.
+        // This helps recover from bus errors where repeated-start state is left open.
+        Wire.end();
+        delay(1);
+        Wire.begin();
+        delay(1);
+        Wire.setClock(400000);
+        delay(1);
+        while (Wire.available()) {
+            Wire.read();
+        }
+    };
+
+    auto flushI2cBuffer = []() {
+        while (Wire.available()) {
+            Wire.read();
+        }
+    };
+
     for (attempt = 0; attempt < MAX_RETRIES; ++attempt) {
         Wire.beginTransmission(i2cAddress);
         Wire.write(0x00); // Dummy write to initiate read
-        rc = Wire.endTransmission(false); // Send repeated start
+        rc = Wire.endTransmission(); // Use stop/start instead of repeated start
         if (rc != 0) {
-            //Serial.print("ELVH_Sensor::readI2C endTransmission rc=");
-            //Serial.println(rc);
+            Serial.printf("ELVH_Sensor::readI2C write failed (addr=0x%02X, rc=%d)\n", i2cAddress, rc);
+            resetI2cBus();
             delay(10);
             continue;
         }
 
         // Request bytes and check how many were received
-        received = Wire.requestFrom((int)i2cAddress, (int)bytesToRead);
-        if (received == 0) {
-            //Serial.print("ELVH_Sensor::readI2C requestFrom returned 0, attempt ");
-            //Serial.println(attempt + 1);
+        received = Wire.requestFrom((uint8_t)i2cAddress, (size_t)bytesToRead, true);
+        if (received != (int)bytesToRead) {
+            if (received == 0) {
+                Serial.printf("ELVH_Sensor::readI2C requestFrom returned 0 (addr=0x%02X), retrying\n", i2cAddress);
+            } else {
+                Serial.printf("ELVH_Sensor::readI2C incomplete read (addr=0x%02X): requested=%u got=%d\n", i2cAddress, bytesToRead, received);
+            }
+            flushI2cBuffer();
+            resetI2cBus();
+            status = 0xFF;
+            rawPressure = 0;
+            rawTemperature = 0;
             delay(10);
             continue;
         }
 
         // Now read bytes safely depending on how many arrived
-        if (received >= 2 && Wire.available() >= 2) {
+        if (Wire.available() >= 2) {
             uint8_t msb = Wire.read();
             uint8_t lsb = Wire.read();
             status = (msb >> 6) & 0x03;
             rawPressure = ((msb & 0x3F) << 8) | lsb;
             updatePressureTrend(rawPressure);
         } else {
-            // Not enough data to determine pressure; mark as error and retry
+            // Not enough data to determine pressure; reset and retry
+            Serial.println("ELVH_Sensor::readI2C not enough data for status+pressure");
+            flushI2cBuffer();
+            resetI2cBus();
             status = 0xFF;
             rawPressure = 0;
             rawTemperature = 0;
-            if (received < 2) {
-                Serial.println("ELVH_Sensor::readI2C not enough data for status+pressure");
-                delay(10);
-                continue;
-            }
+            delay(10);
+            continue;
         }
 
         // Read temperature if present
@@ -514,6 +543,7 @@ void ELVH_Sensor::readI2C(uint8_t bytesToRead) {
         Serial.print(rc);
         Serial.print(", received=");
         Serial.println(received);
+        resetI2cBus();
     } else {
         // Debug print parsed values if successful
         //Serial.print("ELVH_Sensor::readI2C success status=0x");
