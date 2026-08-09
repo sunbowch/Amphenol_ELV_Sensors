@@ -54,6 +54,8 @@ public:
     void setCSPin(uint8_t csPin);
     void setMCP(Adafruit_MCP23X17* mcp, uint8_t csPin); // New API to use MCP23X17 expander
     void setMCPMutex(void* mutex); // New: set external mutex for thread-safe MCP access
+    bool mcpLock();
+    void mcpUnlock();
 
     // Force bus mode and runtime configuration
     void setI2CMode(bool mode);
@@ -121,10 +123,6 @@ private:
     // Centralized unit conversion helpers
     static float unitToPsi(Unit u, float value);
     static float psiToUnit(Unit u, float value);
-
-    // Helper to safely access MCP with mutex protection
-    void mcpLock();
-    void mcpUnlock();
 };
 
 #endif // ELVH_SENSOR_H

@@ -41,16 +41,17 @@ void ELVH_Sensor::setMCPMutex(void* mutex) {
 }
 
 // Helper: lock MCP mutex if available
-void ELVH_Sensor::mcpLock() {
+bool ELVH_Sensor::mcpLock() {
     #ifdef configUSE_PREEMPTION
     // FreeRTOS environment detected
     if (mcpMutex != nullptr) {
-        if (xSemaphoreTake((SemaphoreHandle_t)mcpMutex, portMAX_DELAY) != pdTRUE) {
-            Serial.println("ELVH_Sensor::mcpLock ERROR: Failed to acquire mutex!");
-            return;
+        if (xSemaphoreTake((SemaphoreHandle_t)mcpMutex, pdMS_TO_TICKS(500)) != pdTRUE) {
+            Serial.println("ELVH_Sensor::mcpLock WARNING: Failed to acquire mutex (timeout)");
+            return false;
         }
     }
     #endif
+    return true;
 }
 
 // Helper: unlock MCP mutex if available
@@ -413,24 +414,51 @@ void ELVH_Sensor::readSensorData(uint8_t bytesToRead) {
     if (isI2C) {
         readI2C(bytesToRead);
     } else {
+        bool usingMcpCs = (useMCP && mcpPtr && csPin < 16);
         if (useMCP && mcpPtr && csPin < 16) {
-            mcpLock();
+            // Hold MCP mutex only while toggling/checking the MCP CS pin.
+            // Do not hold it across SPI transfer to avoid long lock contention.
+            bool haveLock = mcpLock();
+            if (!haveLock) {
+                status = 0xFF;
+                rawPressure = 0;
+                rawTemperature = 0;
+                Serial.println("ELVH_Sensor::readSensorData ERROR: Failed to lock MCP for CS assert");
+                return;
+            }
             mcpPtr->digitalWrite(csPin, LOW); // Assert CS
-            while (mcpPtr->digitalRead(csPin) != LOW) {
+            uint32_t startMs = millis();
+            while (mcpPtr->digitalRead(csPin) != LOW && (millis() - startMs) < 50) {
                 yield();
             }
+            if (mcpPtr->digitalRead(csPin) != LOW) {
+                Serial.println("ELVH_Sensor::readSensorData WARNING: CS pin did not settle LOW");
+            }
+            mcpUnlock();
         } else if (csPin < 255) {
             digitalWrite(csPin, LOW); // Assert CS
-            while (digitalRead(csPin) != LOW) {
+            uint32_t startMs = millis();
+            while (digitalRead(csPin) != LOW && (millis() - startMs) < 50) {
                 yield();
+            }
+            if (digitalRead(csPin) != LOW) {
+                Serial.println("ELVH_Sensor::readSensorData WARNING: CS pin did not settle LOW");
             }
         }
         readSPI(bytesToRead);
 
-        if (useMCP && mcpPtr && csPin < 16) {
-            mcpPtr->digitalWrite(csPin, HIGH); // Deassert CS
-            delayMicroseconds(2);
-            mcpUnlock();
+        if (usingMcpCs) {
+            bool haveLock = mcpLock();
+            if (haveLock) {
+                mcpPtr->digitalWrite(csPin, HIGH); // Deassert CS
+                delayMicroseconds(2);
+                mcpUnlock();
+            } else {
+                // Best-effort deassert to avoid leaving CS stuck LOW.
+                Serial.println("ELVH_Sensor::readSensorData WARNING: Failed to lock MCP for CS deassert; using best-effort write");
+                mcpPtr->digitalWrite(csPin, HIGH);
+                delayMicroseconds(2);
+            }
         } else if (csPin < 255) {
             digitalWrite(csPin, HIGH); // Deassert CS
             delayMicroseconds(2);
